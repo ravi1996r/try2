@@ -1,0 +1,25 @@
+# WHY: the project must behave identically when cloned on Windows, WSL2 or Linux. CRLF line
+# endings inside shell scripts, Docker entrypoints and .gitleaks.toml break builds in ways that
+# look like unrelated failures, so every text file is normalised to LF in the repository and
+# checked out as LF everywhere.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending translated: doing so corrupts them.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.pdf binary
+*.glb binary
+*.gltf binary
+*.bin binary
+
+# Windows-only scripts keep CRLF because cmd.exe needs it.
+*.bat text eol=crlf
+*.cmd text eol=crlf

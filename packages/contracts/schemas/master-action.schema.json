@@ -1,0 +1,652 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://portfolio.local/schemas/master-action.schema.json",
+  "title": "MasterAction",
+  "description": "The ONLY vocabulary the Master bot may use to change the UI. Bot 2 gets no tools at all. Validated identically in the AI service, the gateway and the browser.",
+  "type": "object",
+  "required": [
+    "name"
+  ],
+  "properties": {
+    "name": {
+      "$ref": "#/definitions/action_name"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "set_theme"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "theme"
+            ],
+            "properties": {
+              "theme": {
+                "enum": [
+                  "chill",
+                  "cyberpunk",
+                  "fantasy",
+                  "retro",
+                  "modern"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "set_font"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "enum": [
+                  "Inter",
+                  "JetBrains Mono",
+                  "Space Grotesk",
+                  "IBM Plex Sans",
+                  "IBM Plex Mono",
+                  "Source Sans 3",
+                  "Sora",
+                  "Bitter",
+                  "Nunito Sans",
+                  "Atkinson Hyperlegible"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "set_font_size"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "scale"
+            ],
+            "properties": {
+              "scale": {
+                "type": "number",
+                "minimum": 0.85,
+                "maximum": 1.6
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "set_accent"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "color"
+            ],
+            "properties": {
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "toggle_motion"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "enum": [
+                  "on",
+                  "off",
+                  "reduced"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "set_quality"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "tier"
+            ],
+            "properties": {
+              "tier": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "auto"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "set_camera_preset"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "preset"
+            ],
+            "properties": {
+              "preset": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[a-z0-9_-]+$"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "scroll_to_section"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "section"
+            ],
+            "properties": {
+              "section": {
+                "enum": [
+                  "hero",
+                  "about",
+                  "experience",
+                  "projects",
+                  "skills",
+                  "education",
+                  "achievements",
+                  "contact"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "open_chatbot"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "bot"
+            ],
+            "properties": {
+              "bot": {
+                "enum": [
+                  "bot1",
+                  "bot2",
+                  "bot3"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "close_chatbot"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "set_layout"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "properties": {
+              "position": {
+                "enum": [
+                  "left",
+                  "right",
+                  "center"
+                ]
+              },
+              "size": {
+                "enum": [
+                  "compact",
+                  "default",
+                  "large"
+                ]
+              },
+              "density": {
+                "enum": [
+                  "comfortable",
+                  "compact"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "toggle_sound"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "on"
+            ],
+            "properties": {
+              "on": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "set_volume"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "volume"
+            ],
+            "properties": {
+              "volume": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "toggle_high_contrast"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "on"
+            ],
+            "properties": {
+              "on": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "toggle_dyslexia_friendly_font"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "required": [
+              "on"
+            ],
+            "properties": {
+              "on": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "reset_ui"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "undo"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "redo"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "open_model_settings"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "required": [
+          "name",
+          "args"
+        ],
+        "properties": {
+          "args": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "action_name": {
+      "enum": [
+        "set_theme",
+        "set_font",
+        "set_font_size",
+        "set_accent",
+        "toggle_motion",
+        "set_quality",
+        "set_camera_preset",
+        "scroll_to_section",
+        "open_chatbot",
+        "close_chatbot",
+        "set_layout",
+        "toggle_sound",
+        "set_volume",
+        "toggle_high_contrast",
+        "toggle_dyslexia_friendly_font",
+        "reset_ui",
+        "undo",
+        "redo",
+        "open_model_settings"
+      ]
+    }
+  }
+}

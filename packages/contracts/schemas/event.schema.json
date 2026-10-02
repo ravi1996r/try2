@@ -1,0 +1,168 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://portfolio.local/schemas/event.json",
+  "title": "StreamEvent",
+  "description": "One SSE data frame. Identical vocabulary for browser<->gateway and gateway<->AI service hops.",
+  "type": "object",
+  "required": ["type", "request_id"],
+  "properties": {
+    "type": {
+      "enum": ["meta", "status", "token", "source", "tool_call", "error", "done"]
+    },
+    "request_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+
+    "meta": {
+      "type": "object",
+      "required": ["bot", "path", "provider_label", "model_label"],
+      "properties": {
+        "bot": { "enum": ["bot1", "bot2", "bot3"] },
+        "path": { "enum": ["site", "browser"] },
+        "provider_label": { "type": "string", "maxLength": 120 },
+        "model_label": { "type": "string", "maxLength": 160 },
+        "key_source": { "enum": ["site", "visitor"] },
+        "cost_label": {
+          "type": "string",
+          "description": "Honest cost label: FREE / FREE WITH LIMITS / TRIAL / PAID / UNKNOWN"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "status": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "enum": [
+            "queued",
+            "processing",
+            "retrieving",
+            "streaming",
+            "retrying",
+            "completed",
+            "failed",
+            "cancelled",
+            "timed_out"
+          ]
+        },
+        "detail": { "type": "string", "maxLength": 400 },
+        "next_step": { "type": "string", "maxLength": 400 }
+      },
+      "additionalProperties": false
+    },
+
+    "token": {
+      "type": "object",
+      "required": ["text"],
+      "properties": { "text": { "type": "string", "maxLength": 8000 } },
+      "additionalProperties": false
+    },
+
+    "source": {
+      "type": "object",
+      "required": ["id", "kind", "title"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 200 },
+        "kind": {
+          "enum": ["resume_section", "project", "file", "url", "web"]
+        },
+        "title": { "type": "string", "maxLength": 300 },
+        "locator": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Human locator: page number, heading path, or URL."
+        },
+        "url": { "type": "string", "maxLength": 2048 },
+        "snippet": { "type": "string", "maxLength": 1200 },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+
+    "tool_call": {
+      "type": "object",
+      "required": ["name", "args"],
+      "properties": {
+        "name": { "$ref": "#/definitions/action_name" },
+        "args": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+
+    "error": {
+      "type": "object",
+      "required": ["code", "message_safe", "retryable"],
+      "properties": {
+        "code": {
+          "enum": [
+            "validation",
+            "provider_unavailable",
+            "quota_exceeded",
+            "context_limit",
+            "retrieval_failure",
+            "rate_limited",
+            "budget_exhausted",
+            "not_configured",
+            "internal"
+          ]
+        },
+        "message_safe": {
+          "type": "string",
+          "maxLength": 600,
+          "description": "Safe for display. Never contains secrets, prompts or raw visitor content."
+        },
+        "retryable": { "type": "boolean" },
+        "next_step": { "type": "string", "maxLength": 400 },
+        "request_id": { "type": "string", "maxLength": 128 }
+      },
+      "additionalProperties": false
+    },
+
+    "done": {
+      "type": "object",
+      "required": ["usage", "ttft_ms"],
+      "properties": {
+        "usage": {
+          "type": "object",
+          "required": ["prompt", "completion"],
+          "properties": {
+            "prompt": { "type": "integer", "minimum": 0 },
+            "completion": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "ttft_ms": { "type": "integer", "minimum": 0 },
+        "total_ms": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+
+  "definitions": {
+    "action_name": {
+      "enum": [
+        "set_theme",
+        "set_font",
+        "set_font_size",
+        "set_accent",
+        "toggle_motion",
+        "set_quality",
+        "set_camera_preset",
+        "scroll_to_section",
+        "open_chatbot",
+        "close_chatbot",
+        "set_layout",
+        "toggle_sound",
+        "set_volume",
+        "toggle_high_contrast",
+        "toggle_dyslexia_friendly_font",
+        "reset_ui",
+        "undo",
+        "redo",
+        "open_model_settings"
+      ]
+    }
+  }
+}

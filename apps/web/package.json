@@ -1,0 +1,23 @@
+{
+  "name": "@portfolio/web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "prerender": "node scripts/prerender.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@portfolio/contracts": "*",
+    "three": "^0.171.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.1",
+    "@playwright/test": "^1.49.1",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  }
+}

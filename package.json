@@ -1,0 +1,42 @@
+{
+  "name": "ravi-3d-portfolio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive 3D portfolio for Ravi Ranjan Prasad with three grounded AI chatbots (Three.js + Node gateway + Python AI service).",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "workspaces": [
+    "packages/contracts",
+    "services/gateway",
+    "apps/web"
+  ],
+  "scripts": {
+    "verify:fast": "node scripts/run.mjs verify:fast",
+    "verify": "node scripts/run.mjs verify",
+    "dev": "node scripts/run.mjs dev",
+    "build": "node scripts/run.mjs build",
+    "test:live": "node scripts/run.mjs test:live",
+    "evals:live": "node scripts/run.mjs evals:live",
+    "perf:local": "node scripts/run.mjs perf:local",
+    "load": "node scripts/run.mjs load",
+    "data:reset": "node scripts/run.mjs data:reset",
+    "index:rebuild": "node scripts/run.mjs index:rebuild",
+    "traceability": "node scripts/generate-traceability.mjs",
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "lint": "node scripts/lint.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "test:unit": "node scripts/run.mjs test:unit",
+    "test:e2e": "node scripts/run.mjs test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.21.5": true
+  }
+}

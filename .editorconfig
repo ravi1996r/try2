@@ -1,0 +1,24 @@
+# WHY: a consistent editor config stops Windows checkouts from producing CRLF shell scripts and
+# trailing whitespace that then trips the secret scanner or a Docker build.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.py]
+indent_size = 4
+max_line_length = 110
+
+[*.{md,markdown}]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
+
+[*.bat]
+end_of_line = crlf

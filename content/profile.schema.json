@@ -1,0 +1,454 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://portfolio.local/schemas/profile.schema.json",
+  "title": "PortfolioProfile",
+  "description": "Single source of truth for all personal content in the site and Chatbot 1. Facts are never invented: anything the resume does not state must be an explicitly marked TODO in docs/content-todos.md rather than a guess.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "identity",
+    "summary",
+    "skills",
+    "experience",
+    "projects",
+    "education",
+    "certifications",
+    "contact",
+    "sections"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "identity": {
+      "type": "object",
+      "required": [
+        "full_name",
+        "headline"
+      ],
+      "properties": {
+        "full_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "headline": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location": {
+          "type": "string"
+        },
+        "tagline": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "category",
+          "items"
+        ],
+        "properties": {
+          "category": {
+            "type": "string",
+            "minLength": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "experience": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "employer",
+          "role",
+          "start",
+          "highlights"
+        ],
+        "properties": {
+          "employer": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "start": {
+            "$ref": "#/definitions/yearMonth"
+          },
+          "end": {
+            "oneOf": [
+              {
+                "$ref": "#/definitions/yearMonth"
+              },
+              {
+                "const": "Present"
+              }
+            ]
+          },
+          "location": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "clients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/clientEngagement"
+            }
+          },
+          "highlights": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "blurb"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "blurb": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "stack": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "highlights": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/link"
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "public",
+              "confidential"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "education": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "degree",
+          "institution"
+        ],
+        "properties": {
+          "degree": {
+            "type": "string"
+          },
+          "institution": {
+            "type": "string"
+          },
+          "start": {
+            "$ref": "#/definitions/yearMonth"
+          },
+          "end": {
+            "$ref": "#/definitions/yearMonth"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "certifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "contact": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "$ref": "#/definitions/contactField"
+        },
+        "phone": {
+          "$ref": "#/definitions/contactField"
+        },
+        "linkedin": {
+          "$ref": "#/definitions/contactField"
+        },
+        "github": {
+          "$ref": "#/definitions/contactField"
+        },
+        "location": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "resume": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "chatbot1": {
+      "type": "object",
+      "properties": {
+        "voice": {
+          "enum": [
+            "third",
+            "first"
+          ]
+        },
+        "persona_note": {
+          "type": "string"
+        },
+        "refusal_phrase": {
+          "type": "string"
+        },
+        "starter_questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "enabled"
+        ],
+        "properties": {
+          "id": {
+            "enum": [
+              "hero",
+              "about",
+              "experience",
+              "projects",
+              "skills",
+              "education",
+              "achievements",
+              "contact"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "camera_preset": {
+            "type": "string"
+          },
+          "todo": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "description": "Ordered list driving both the 3D world stops and the HTML content layer."
+    },
+    "source_register": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "field",
+          "source_file",
+          "locator"
+        ],
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "source_file": {
+            "type": "string"
+          },
+          "locator": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Pointer from each content area back to where it was extracted in inputs/."
+    }
+  },
+  "definitions": {
+    "yearMonth": {
+      "type": "string",
+      "pattern": "^[0-9]{4}(-[0-9]{2})?$"
+    },
+    "link": {
+      "type": "object",
+      "required": [
+        "label",
+        "url"
+      ],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "clientEngagement": {
+      "type": "object",
+      "required": [
+        "name",
+        "project",
+        "highlights"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/definitions/yearMonth"
+        },
+        "end": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/yearMonth"
+            },
+            {
+              "const": "Present"
+            }
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "highlights": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "contactField": {
+      "type": "object",
+      "required": [
+        "value",
+        "public",
+        "render"
+      ],
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "public": {
+          "type": "boolean"
+        },
+        "render": {
+          "enum": [
+            "plain",
+            "reveal",
+            "link"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "render=reveal means click-to-reveal and absent from crawlable HTML."
+    },
+    "min_font_scale": {
+      "type": "number",
+      "minimum": 0.85,
+      "maximum": 1.6
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@portfolio/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": "./src/index.js",
+    "./schemas/*": "./schemas/*"
+  },
+  "scripts": {
+    "generate": "node ../../scripts/generate-contracts.mjs",
+    "test": "vitest run"
+  }
+}

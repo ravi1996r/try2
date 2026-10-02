@@ -1,0 +1,43 @@
+# WHY: everything here is either a secret, a machine-specific artefact, or a large generated
+# blob. `data/` holds the SQLite databases, retrieval indexes, Drop-Zone blobs and caches: it must
+# never be committed and must never be served over HTTP.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+
+data/
+!data/.gitkeep
+
+node_modules/
+dist/
+.vite/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+coverage/
+
+docs/reports/*.png
+docs/reports/screenshots/
+
+# Temporary extraction scratch used while parsing the resume.
+pack.txt
+pack_flat.txt
+scripts/_inspect.py
+
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
