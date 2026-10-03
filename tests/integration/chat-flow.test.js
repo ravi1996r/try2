@@ -122,6 +122,88 @@ async function chatTurn(gatewayUrl, body) {
   return { status: res.status, contentType: res.headers.get('content-type') ?? '', text, events: parseSse(text) };
 }
 
+/**
+ * Bot 3 is the only bot whose turn carries SIDE EFFECTS. Everything here is about proving that a
+ * request to change the page survives the real cross-process path as a typed event, and that a change
+ * the safety rules forbid never leaves the gateway.
+ *
+ * WHY this suite exists at all and not just a unit test on the planner: the planner, the AI service,
+ * the gateway and the SSE encoder are four separate processes. Each could be individually correct and
+ * the chain broken -- the action planned, never serialised, or serialised as prose. Only a real request
+ * through all four can prove the visitor would actually see the page change.
+ */
+describe('Bot 3 (Site Master): a UI request becomes a typed tool_call', () => {
+  it('streams a tool_call for the theme the visitor asked for', async () => {
+    const { events } = await chatTurn(stack.gatewayUrl, {
+      bot: 'bot3', message: 'please switch to the cyberpunk theme', history: [],
+    });
+    const calls = events.filter((e) => e.type === 'tool_call');
+    expect(calls).toHaveLength(1);
+    // WHY assert the exact payload: a tool_call with the right name and the wrong args would still be
+    // applied by the browser, so the name alone does not prove the feature works.
+    expect(calls[0].tool_call).toEqual({ name: 'set_theme', args: { theme: 'cyberpunk' } });
+  });
+
+  it('streams every action of a combined request, not just the first', async () => {
+    const { events } = await chatTurn(stack.gatewayUrl, {
+      bot: 'bot3', message: 'make the text bigger and go retro', history: [],
+    });
+    const names = events.filter((e) => e.type === 'tool_call').map((e) => e.tool_call.name);
+    // WHY this matters: a visitor asking for two things and getting one is a silent partial failure
+    // that looks like the bot understood them.
+    expect(names).toContain('set_font_size');
+    expect(names).toContain('set_theme');
+  });
+
+  it('applies the accessibility clamps before the event leaves the gateway', async () => {
+    // WHY: the planner clamps, and so does the shared validator, and so does the browser. Asserting the
+    // clamp at the wire proves the gateway is not the layer where a hostile value could slip past.
+    const { events } = await chatTurn(stack.gatewayUrl, {
+      bot: 'bot3', message: 'bigger', history: [], font_scale: 1.6,
+    });
+    const fontCalls = events.filter((e) => e.tool_call?.name === 'set_font_size');
+    // At the ceiling there is nothing to step to, so the planner must emit NO font action at all rather
+    // than one carrying a value above the limit.
+    for (const call of fontCalls) {
+      expect(call.tool_call.args.scale).toBeLessThanOrEqual(1.6);
+      expect(call.tool_call.args.scale).toBeGreaterThanOrEqual(0.85);
+    }
+  });
+
+  it('never emits a tool_call for bot 1, which has no UI tools', async () => {
+    const { events } = await chatTurn(stack.gatewayUrl, {
+      bot: 'bot1', message: 'What RAG work has he done?', history: [],
+    });
+    // WHY this is a security property, not a tidiness one: bot 1 answers questions about the resume.
+    // If a document it retrieved could steer it into changing the page, untrusted content would have
+    // control of the visitor's screen.
+    expect(events.filter((e) => e.type === 'tool_call')).toEqual([]);
+  });
+
+  it('emits undo as an ordinary tool_call so the browser owns the history', async () => {
+    // WHY the browser owns history rather than the server: the browser is the only place that knows
+    // what the visitor's page actually looks like, so it is the only place that can undo correctly.
+    const { events } = await chatTurn(stack.gatewayUrl, {
+      bot: 'bot3', message: 'undo that', history: [],
+    });
+    const calls = events.filter((e) => e.type === 'tool_call');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].tool_call.name).toBe('undo');
+  });
+
+  it('never leaks the system canary into a tool_call', async () => {
+    // WHY: the canary exists so a prompt leak is observable. Bot 3's plan is built server-side and
+    // could, in principle, carry text from the system prompt into an event the visitor sees.
+    const { text } = await chatTurn(stack.gatewayUrl, {
+      bot: 'bot3', message: 'switch to retro', history: [],
+    });
+    // The fake provider echoes a tagged response; what must never appear is a bare hex token from the
+    // system prompt, which is 24 hex characters.
+    const canaryLeak = /["'](?:[0-9a-f]{24})["']/.exec(text);
+    expect(canaryLeak, `possible canary leak: ${canaryLeak?.[0]}`).toBeNull();
+  });
+});
+
 describe('POST /v1/prepare (browser-direct context assembly)', () => {
   it('returns retrieval sources without ever calling a model', async () => {
     const res = await fetch(`${stack.gatewayUrl}/v1/prepare`, {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTheme, THEMES, type ThemeId } from '../hooks/useTheme';
+import { useMasterActions } from '../hooks/useMasterActions';
 import { useContactReveal } from '../hooks/useContactReveal';
 import { useActiveSection } from '../hooks/useActiveSection';
 import type { SceneHandle } from '../scene/Scene';
@@ -25,6 +26,10 @@ function probeWebGL(canvas: HTMLCanvasElement): boolean {
 }
 
 export function Enhancement() {
+  // WHY the store is created here: this component is the single owner of page state, so it is the one
+  // place that can hand the chat panel a callback into the same store the theme controls read from.
+  // Two stores would mean undo could restore a theme the visible controls no longer agree with.
+  const master = useMasterActions();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sceneRef = useRef<SceneHandle | null>(null);
   const [state, setState] = useState<SceneState>('probing');
@@ -151,7 +156,7 @@ export function Enhancement() {
           && 'WebGL is unavailable here, so 3D cannot render. The text version is the complete page.'}
       </p>
       <ModelSwitcher handle={byokRef} />
-      <ChatPanel activeSection={active} byok={byokRef} />
+      <ChatPanel activeSection={active} byok={byokRef} onToolCall={master.dispatch} />
     </div>
   );
 }

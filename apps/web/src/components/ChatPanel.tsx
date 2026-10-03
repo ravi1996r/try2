@@ -32,10 +32,20 @@ interface Turn {
 export function ChatPanel({
   activeSection,
   byok,
+  onToolCall,
 }: {
   activeSection?: string;
   /** The switcher's live settings, read at send time so a typed key is never held in React state. */
   byok: React.MutableRefObject<SwitcherHandle | null>;
+  /**
+   * Applies one Master bot action. Optional so the panel still renders in tests and in the no-JS
+   * fallback, where no bot is ever running.
+   *
+   * WHY the panel does not apply actions itself: the page must be able to refuse one. Passing the raw
+   * action to a store that owns the safety rules keeps a single decision point, so the chat UI can
+   * never become a second, weaker path to changing the visitor's screen.
+   */
+  onToolCall?: (action: unknown) => boolean;
 }) {
   const [bot, setBot] = useState<BotId>('bot1');
   const [path, setPath] = useState<ChatPath>('site');
@@ -92,6 +102,23 @@ export function ChatPanel({
         patchLast((t) => ({ ...t, status: 'Done' }));
       } else {
         await openChatStream({ bot, message }, (event: StreamEvent) => {
+          // WHY handled OUTSIDE patchLast: applying an action changes page state, not turn state, so
+          // routing it through the turn reducer would make a tool_call look like it was part of the
+          // answer and would rebuild the turn object for no reason.
+          if (event.type === 'tool_call') {
+            // WHY the refusal is reported: if the store rejects the action, the model may still narrate
+            // "I've switched the theme". Saying so in the transcript is what stops the page from
+            // claiming a change that never happened.
+            const applied = onToolCall?.({ name: event.tool_call.name, args: event.tool_call.args })
+              ?? false;
+            if (!applied) {
+              patchLast((turn) => ({
+                ...turn,
+                error: 'That change was not allowed by the site\u2019s safety rules.',
+              }));
+            }
+            return;
+          }
           patchLast((turn) => {
             if (event.type === 'token') return { ...turn, answer: turn.answer + event.token.text };
             if (event.type === 'source') {

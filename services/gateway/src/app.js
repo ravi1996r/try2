@@ -24,13 +24,16 @@ import {
   createMemoryKeyValueStore, createDiskKeyValueStore,
 } from './backends/keyvalue.js';
 import { resolveKeyValueStore } from './backends/registry.js';
+// WHY the gateway imports the SAME validator the browser uses: two copies of a security rule always
+// drift, and a drift means the gateway approves something the page would refuse (or worse, the reverse).
+import { validateActions } from '@portfolio/contracts/actions';
 import { createModelGateway, ModelGatewayError, MODEL_EVENT } from './backends/model-gateway.js';
 import { createCanaryGuard } from './security/canary-guard.js';
 import {
   securityHeaders, isOriginAllowed, createRateLimiter, createBudgetBreaker,
 } from './middleware/security.js';
 import {
-  newRequestId, statusEvent, tokenEvent, sourceEvent, errorEvent, doneEvent,
+  newRequestId, statusEvent, tokenEvent, sourceEvent, errorEvent, doneEvent, toolCallEvent,
 } from './events.js';
 // WHY node built-ins here: the contact-reveal endpoint reads content/profile.json. It is build-time
 // content a deploy can change, so it is read per request rather than cached at boot.
@@ -128,7 +131,15 @@ export function createApp({ env = process.env, store: injectedStore, redisClient
   // mountRoutes() therefore registers the parser itself, immediately after the CORS and request-id
   // middleware. This function only builds context; it installs no request-handling middleware.
 
-  return { app, config, gateway, rateLimiter, budget, store: asyncStore, _rawStore: storePromise };
+  // WHY `actualCacheBackend` is a FUNCTION on ctx and not a bare variable: /healthz is mounted by a
+  // different function than the one that builds the store, so a local is simply not in scope there.
+  // Reading a plain variable produced a ReferenceError that only appeared when the gateway booted for
+  // real -- every unit test injects a store, so none of them ever executed this path. A getter keeps
+  // the single source of truth in createApp while letting the route observe it once resolved.
+  return {
+    app, config, gateway, rateLimiter, budget, store: asyncStore, _rawStore: storePromise,
+    actualCacheBackend: () => actualCacheBackend,
+  };
 }
 /**
  * Validates a chat request body.
@@ -236,10 +247,14 @@ export function mountRoutes(ctx, { prepareTurn } = {}) {
   app.use(express.json({ limit: config.requestMaxBytes }));
 
   app.get('/healthz', async (_req, res) => {
-    // WHY await the store promise: the resolved backend name is only known once the store exists, and
-    // reporting the *configured* value is exactly how this endpoint used to claim Redis while running
-    // the in-memory store.
-    await storePromise;
+    // WHY await the store: the resolved backend name is only known once the store exists, and reporting
+    // the *configured* value is exactly how this endpoint used to claim Redis while running the
+    // in-memory store.
+    //
+    // WHY ctx._rawStore and not a bare `storePromise`: this route is mounted by a DIFFERENT function
+    // than the one that built the store. Reaching for the local directly was a ReferenceError that only
+    // appeared when the gateway booted for real -- the unit tests inject a store, so they never hit it.
+    await ctx._rawStore;
     res.json({
       ok: true,
       service: 'gateway',
@@ -250,8 +265,9 @@ export function mountRoutes(ctx, { prepareTurn } = {}) {
       // claim the backend registry exists to prevent. The AI service's own /healthz is the authority
       // for those concerns; this endpoint answers only for the gateway.
       backends: {
-        // WHY `actualCacheBackend`: this is the store that exists right now, not the requested one.
-        cache: actualCacheBackend ?? 'unknown',
+        // WHY read through the ctx getter: this route is mounted by a different function than the one
+        // that built the store, so the local variable is out of scope here.
+        cache: ctx.actualCacheBackend() ?? 'unknown',
         llm: config.llmProvider,
         embeddings: config.embeddingProvider,
         search: config.searchProvider,
@@ -549,6 +565,26 @@ export function mountChatRoutes(ctx, { prepareTurn } = {}) {
           send(sourceEvent(requestId, {
             id: s.id, kind: s.kind, title: s.title, locator: s.locator, score: s.score,
           }));
+        }
+      }
+
+      // WHY the gateway validates before forwarding: the AI service's plan is still remote input from
+      // this process's point of view. The browser validates again on arrival, because the browser-direct
+      // path never touches this code -- but a bad action should not even reach the network.
+      if (prepared?.actions?.length) {
+        const { applied, rejected } = validateActions(prepared.actions);
+        for (const action of applied) {
+          send(toolCallEvent(requestId, action.name, action.args));
+        }
+        // WHY say something when actions were dropped: silence would let the model narrate "I have
+        // changed the theme" while the visitor's screen never changed. The count, not the reason, keeps
+        // the message safe to render.
+        if (rejected.length) {
+          send(statusEvent(
+            requestId,
+            'processing',
+            `${rejected.length} requested change(s) were not allowed by the site's safety rules.`,
+          ));
         }
       }
 

@@ -155,12 +155,45 @@ class TestPrepare:
         # The canary exists so the gateway can assert it never reaches the visitor.
         assert body["_canary"] in body["messages"][0]["content"]
 
-    def test_refuses_other_bots_rather_than_guessing(self, client):
-        # WHY 400 and not a bot1-shaped answer: bot2 and bot3 need different prompts and tools, and a
-        # plausible-looking wrong answer is worse than an explicit refusal.
-        r = client.post("/internal/v1/prepare", json={"bot": "bot3", "message": "switch theme"})
+    def test_refuses_bot2_rather_than_guessing(self, client):
+        # WHY 400 and not a bot1-shaped answer: bot 2 needs Drop-Zone ingestion and per-session
+        # isolation, which is not built yet. A plausible-looking wrong answer is worse than a refusal,
+        # and this assertion is what will fail loudly when someone wires bot2 in without updating it.
+        r = client.post("/internal/v1/prepare", json={"bot": "bot2", "message": "what is in my file"})
         assert r.status_code == 400
-        assert "bot1" in r.json()["detail"]
+        assert "bot2" in r.json()["detail"]
+
+    def test_bot3_returns_a_plan_rather_than_a_retrieval_context(self, client):
+        # WHY bot3 cites nothing: it changes the page, it does not answer questions about the resume.
+        # An empty sources list is the honest representation of a turn that referenced no documents.
+        r = client.post("/internal/v1/prepare", json={"bot": "bot3", "message": "go cyberpunk"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["sources"] == []
+        assert body["retrieval_used"] is False
+        assert body["actions"] == [{"name": "set_theme", "args": {"theme": "cyberpunk"}}]
+        # WHY the canary still travels on bot3: the model narrates the change, and the gateway asserts
+        # the canary never reaches the visitor. Losing it would make a prompt leak unobservable here.
+        assert body["_canary"] in body["messages"][0]["content"]
+
+    def test_bot3_reports_a_limit_instead_of_silently_doing_nothing(self, client):
+        # WHY: the model is about to narrate the change. If the planner hit the font floor and returned
+        # nothing, the model would have to guess what happened, and the visitor would be misled.
+        r = client.post("/internal/v1/prepare", json={"bot": "bot3", "message": "make text smaller"})
+        assert r.status_code == 200
+        # At the default scale a shrink IS produced, so the notes list stays empty here; the clamp case
+        # is covered exhaustively in test_bot3.py. What matters here is that the shape is present so a
+        # caller can render it.
+        assert isinstance(r.json()["notes"], list)
+
+    def test_font_scale_beyond_the_legal_band_is_refused_at_the_edge(self, client):
+        # WHY clamp in the schema and not only in the planner: this value comes from the browser, and
+        # the browser is about to re-apply whatever scale it asked for.
+        r = client.post(
+            "/internal/v1/prepare",
+            json={"bot": "bot3", "message": "bigger", "font_scale": 99.0},
+        )
+        assert r.status_code == 422
 
     def test_history_cannot_inject_a_system_message(self, client):
         # WHY: history is client-supplied. A "system" role in it must never reach the model.
