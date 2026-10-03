@@ -7,6 +7,10 @@
   "types": "./src/index.d.ts",
   "exports": {
     ".": "./src/index.js",
+    "./actions": {
+      "types": "./src/actions.d.ts",
+      "default": "./src/actions.js"
+    },
     "./schemas/*": "./schemas/*"
   },
   "scripts": {
