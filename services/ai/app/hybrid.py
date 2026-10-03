@@ -26,8 +26,10 @@ is an acceptable price for not having to calibrate two incomparable score scales
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
+import threading
 from pathlib import Path
 
 from .chunking import Chunk
@@ -79,7 +81,17 @@ class HybridIndex:
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(self.db_path)
+        # WHY check_same_thread=False: FastAPI runs sync endpoints in a THREADPOOL, so the connection
+        # is created on one thread and used on another. Without this, every /retrieve call raises
+        # "SQLite objects created in a thread can only be used in that same thread" -- a real bug that
+        # only appears once the app runs under a server, never in unit tests that call it directly.
+        #
+        # WHY that is safe: a single connection is NOT safe to share across concurrent threads without
+        # external locking (two interleaved statements can see inconsistent state), so every access is
+        # serialised by self._lock below. An in-process RLock is sufficient and correct here because
+        # this index is a single-process local store; the production adapter is Azure AI Search.
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._lock = threading.RLock()
         self.conn.execute("PRAGMA journal_mode=WAL")
         self._vectors: dict[str, list[float]] = {}
         self._chunks: dict[str, Chunk] = {}
@@ -111,22 +123,23 @@ class HybridIndex:
 
     def upsert(self, chunks: list[Chunk]) -> int:
         """Insert or replace chunks. Returns the number written."""
-        for c in chunks:
-            self._vectors[c.id] = embed(c.text)
-            self._chunks[c.id] = c
-            self.conn.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (c.id,))
-            self.conn.execute(
-                "INSERT INTO chunks_fts (chunk_id, title, locator, text) VALUES (?, ?, ?, ?)",
-                (c.id, c.title, c.locator, c.text),
-            )
-            self.conn.execute(
-                """INSERT OR REPLACE INTO chunk_meta
-                   (id, kind, title, locator, source_key, bot, session_id, metadata, embedder_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (c.id, c.kind, c.title, c.locator, c.source_key, c.bot, c.session_id,
-                 json.dumps(c.metadata), self.embedder_id),
-            )
-        self.conn.commit()
+        with self._lock:
+            for c in chunks:
+                self._vectors[c.id] = embed(c.text)
+                self._chunks[c.id] = c
+                self.conn.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (c.id,))
+                self.conn.execute(
+                    "INSERT INTO chunks_fts (chunk_id, title, locator, text) VALUES (?, ?, ?, ?)",
+                    (c.id, c.title, c.locator, c.text),
+                )
+                self.conn.execute(
+                    """INSERT OR REPLACE INTO chunk_meta
+                       (id, kind, title, locator, source_key, bot, session_id, metadata, embedder_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (c.id, c.kind, c.title, c.locator, c.source_key, c.bot, c.session_id,
+                     json.dumps(c.metadata), self.embedder_id),
+                )
+            self.conn.commit()
         return len(chunks)
 
     def _load_vectors(self) -> None:
@@ -173,20 +186,22 @@ class HybridIndex:
                 "SELECT id FROM chunk_meta WHERE bot = ? AND session_id = ?", (bot, session_id)
             ).fetchall()
         ]
-        for cid in ids:
-            self.conn.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (cid,))
-            self._vectors.pop(cid, None)
-            self._chunks.pop(cid, None)
-        self.conn.execute(
-            "DELETE FROM chunk_meta WHERE bot = ? AND session_id = ?", (bot, session_id)
-        )
-        self.conn.commit()
+        with self._lock:
+            for cid in ids:
+                self.conn.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (cid,))
+                self._vectors.pop(cid, None)
+                self._chunks.pop(cid, None)
+            self.conn.execute(
+                "DELETE FROM chunk_meta WHERE bot = ? AND session_id = ?", (bot, session_id)
+            )
+            self.conn.commit()
         return len(ids)
 
     def clear(self) -> None:
-        self.conn.execute("DELETE FROM chunks_fts")
-        self.conn.execute("DELETE FROM chunk_meta")
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute("DELETE FROM chunks_fts")
+            self.conn.execute("DELETE FROM chunk_meta")
+            self.conn.commit()
         self._vectors.clear()
         self._chunks.clear()
 
