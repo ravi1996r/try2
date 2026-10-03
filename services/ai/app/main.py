@@ -178,8 +178,20 @@ def create_app(config: Config | None = None) -> FastAPI:
             "ok": True,
             "service": "ai",
             "app_env": cfg.app_env,
-            "backend": "local",
-            "vector": "local(experimental)",
+            # WHY report the SELECTED values rather than a hardcoded "local": these are the selectors
+            # THIS process actually reads. The gateway used to echo its own copy of DB_BACKEND, which
+            # this service never consumed -- a health report from a process that does not use the value
+            # is exactly the kind of claim that must not ship.
+            "backends": {
+                "db": cfg.db_backend,
+                "vector": cfg.vector_backend,
+                "blob": cfg.blob_backend,
+                "embeddings": "local-hashed-ngram-v1",
+                "search": cfg.search_provider,
+            },
+            # WHY this list: the production guard needs to know whether any paid concern is still in
+            # use, and only this process can answer that truthfully.
+            "managed_backends": cfg.managed_backends,
             "chunks": service.index.count("bot1"),
             "auth_required": cfg.is_production,
         }

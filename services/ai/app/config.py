@@ -69,6 +69,25 @@ def _s(raw: dict[str, str], key: str, default: str) -> str:
     return default if v is None or v == "" else v
 
 
+def _one_of(
+    raw: dict[str, str], key: str, allowed: tuple[str, ...], default: str
+) -> str:
+    """
+    Read a backend selector, refusing anything not on the list.
+
+    WHY this validates the VALUE and not just the key: an unrecognised selector must fail loudly. If
+    `DB_BACKEND=postgres` were accepted and quietly treated as sqlite, the operator would believe they
+    were on a different database than the one actually serving traffic.
+    """
+    v = raw.get(key)
+    if v is None or v == "":
+        return default
+    v = v.strip()
+    if v not in allowed:
+        raise ConfigError(f"{key} must be one of: {', '.join(allowed)}")
+    return v
+
+
 def _i(raw: dict[str, str], key: str, default: int, lo: int, hi: int) -> int:
     v = raw.get(key)
     if v is None or v == "":
@@ -103,6 +122,41 @@ class Config:
     search_provider: str = "ddg"
     allow_any_https_endpoint: bool = False
 
+    # ---------------------------------------------------------------------------------------------
+    # Backend selectors. WHY these live HERE and not only in the gateway: the AI service OWNS
+    # retrieval, vector search and uploads. The gateway used to validate DB_BACKEND / VECTOR_BACKEND /
+    # BLOB_BACKEND and then report them on /healthz while this process ignored them entirely -- the
+    # same false claim the JS registry was built to eliminate. The truth about a backend can only be
+    # reported by the process that uses it, so the selector and the report both belong here.
+    #
+    # WHY the default is local: a visitor must be able to clone this and run it on localhost with zero
+    # credentials. A cloud default would break that guarantee, and a project that only runs with a
+    # paid account is not local-first, it is cloud-first with extra steps.
+    # ---------------------------------------------------------------------------------------------
+    db_backend: str = "sqlite"
+    vector_backend: str = "local"
+    blob_backend: str = "local"
+
+    @property
+    def managed_backends(self) -> list[str]:
+        """
+        Which selected concerns are paid services rather than local ones.
+
+        WHY this exists: the production guard must refuse a deployment that still runs on a local
+        concern, but it can only do that reliably if the process that OWNS the concern says so. The
+        gateway previously inferred this from its own environment variables, which are not the ones
+        this service actually reads.
+        """
+        return [
+            name
+            for name, kind in (
+                ("db", self.db_backend),
+                ("vector", self.vector_backend),
+                ("blob", self.blob_backend),
+            )
+            if kind not in ("sqlite", "local")
+        ]
+
     secrets: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -119,8 +173,10 @@ class Config:
             f"[ai] APP_ENV={self.app_env}",
             f"[ai] listening on http://{self.host}:{self.port}",
             f"[ai] index={self.index_path}",
-            "[ai] vector=local(experimental) embeddings=local-hashed-ngram-v1 "
-            f"search={self.search_provider}",
+            # WHY report the SELECTED values rather than a hardcoded "local": an operator must be able
+            # to tell from the startup banner alone which backends this process is actually using.
+            f"[ai] db={self.db_backend} vector={self.vector_backend} blob={self.blob_backend} "
+            f"embeddings=local-hashed-ngram-v1 search={self.search_provider}",
             f"[ai] bot1_voice={self.bot1_voice} context_budget={self.context_token_budget} "
             f"top_k={self.top_k}",
         ]
@@ -154,6 +210,9 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         bot1_voice=_s(raw, "PORTFOLIO_BOT1_VOICE", "third"),
         search_provider=_s(raw, "PORTFOLIO_SEARCH_PROVIDER", "ddg"),
         allow_any_https_endpoint=_b(raw, "PORTFOLIO_ALLOW_ANY_HTTPS_ENDPOINT", False),
+        db_backend=_one_of(raw, "DB_BACKEND", ("sqlite", "mongodb"), "sqlite"),
+        vector_backend=_one_of(raw, "VECTOR_BACKEND", ("local", "azure_search"), "local"),
+        blob_backend=_one_of(raw, "BLOB_BACKEND", ("local", "azure_blob"), "local"),
     )
 
     if cfg.bot1_voice not in ("third", "first"):

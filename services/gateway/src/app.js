@@ -244,15 +244,21 @@ export function mountRoutes(ctx, { prepareTurn } = {}) {
       ok: true,
       service: 'gateway',
       app_env: config.appEnv,
-      // WHY labels only: an operator needs to know WHICH backends are live; nobody needs the values.
+      // WHY the gateway reports only what it OWNS: retrieval, vectors and uploads belong to the AI
+      // service, which reads DB_BACKEND / VECTOR_BACKEND / BLOB_BACKEND. Echoing this process's copy
+      // of those variables produced a health report about a value it never consumed -- the same false
+      // claim the backend registry exists to prevent. The AI service's own /healthz is the authority
+      // for those concerns; this endpoint answers only for the gateway.
       backends: {
-        db: config.dbBackend,
-        // WHY actualCacheBackend: this is the store that exists right now, not the requested one.
+        // WHY `actualCacheBackend`: this is the store that exists right now, not the requested one.
         cache: actualCacheBackend ?? 'unknown',
-        vector: config.vectorBackend,
-        blob: config.blobBackend, llm: config.llmProvider,
-        embeddings: config.embeddingProvider, search: config.searchProvider,
+        llm: config.llmProvider,
+        embeddings: config.embeddingProvider,
+        search: config.searchProvider,
       },
+      // WHY restated as UNVERIFIED: an operator must be able to see that the gateway is not vouching
+      // for db/vector/blob, and that the authority is the other process. Silence would imply coverage.
+      owned_by_ai_service: ['db', 'vector', 'blob'],
       // WHY exposed: the UI must be able to tell a visitor the site model is unavailable and WHY.
       site_model: {
         available: Boolean(gateway.adapter),

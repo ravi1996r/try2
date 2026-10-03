@@ -221,10 +221,51 @@ class TestHealth:
     def test_healthz_reports_labels_not_secrets(self, client):
         body = client.get("/healthz").json()
         assert body["ok"] is True and body["service"] == "ai"
-        assert body["vector"] == "local(experimental)"
+        # WHY the shape changed: healthz used to hardcode "backend": "local" and "vector":
+        # "local(experimental)" while the gateway reported the SELECTED values from its own
+        # environment -- variables this service never read. Both halves were claims rather than
+        # observations. It now reports the selectors this process actually consumes.
+        assert body["backends"]["vector"] == "local"
+        assert body["backends"]["db"] == "sqlite"
+        assert body["backends"]["blob"] == "local"
         # WHY assert auth_required: an operator and E2E-36 need to know whether this deployment is
         # protected without reading any secret.
         assert body["auth_required"] is False
+
+    def test_healthz_never_contains_a_credential(self, client):
+        # WHY scan the raw body rather than checking known keys: the original intent of this suite was
+        # "labels, not secrets", and a key-by-key assertion can only prove the keys someone thought of.
+        # A blanket check proves the property instead of the guess.
+        raw = client.get("/healthz").text
+        for marker in ("SECRET", "api_key", "apikey", "token", "password", "Bearer", "://"):
+            assert marker not in raw, f"healthz leaked something matching {marker!r}"
+
+    def test_managed_backends_is_empty_for_the_free_local_default(self, client):
+        # WHY this is the guarantee the whole switch rests on: with no configuration at all, not one
+        # paid concern may be in use. A visitor who clones the repo must never need a paid account.
+        body = client.get("/healthz").json()
+        assert body["managed_backends"] == []
+
+    def test_selecting_a_managed_backend_is_reported_not_hidden(self):
+        # WHY: the selector is read here, so choosing it must change what this service reports. This is
+        # what stops the gateway's old "echo a variable nobody consumed" behaviour from recurring.
+        from app.config import load_config
+
+        cfg = load_config({
+            "APP_ENV": "local",
+            "DB_BACKEND": "mongodb",
+            "VECTOR_BACKEND": "azure_search",
+        })
+        assert cfg.db_backend == "mongodb"
+        assert cfg.managed_backends == ["db", "vector"]
+
+    def test_an_unknown_selector_is_refused_rather_than_silently_ignored(self):
+        # WHY: DB_BACKEND=postgres must not be accepted and quietly treated as sqlite. The operator
+        # would believe they were on a different database than the one actually serving traffic.
+        from app.config import ConfigError, load_config
+
+        with pytest.raises(ConfigError, match="DB_BACKEND"):
+            load_config({"APP_ENV": "local", "DB_BACKEND": "postgres"})
 
     def test_production_healthz_advertises_that_auth_is_required(self, prod_client):
         assert prod_client.get("/healthz").json()["auth_required"] is True
