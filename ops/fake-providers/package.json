@@ -1,0 +1,11 @@
+{
+  "name": "@portfolio/fake-providers",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "TEST-ONLY fake LLM and search providers. Refuses to start when APP_ENV=production. Every response is tagged as fake.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
