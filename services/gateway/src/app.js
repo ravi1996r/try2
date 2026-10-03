@@ -24,12 +24,21 @@ import {
   createMemoryKeyValueStore, createDiskKeyValueStore,
 } from './backends/keyvalue.js';
 import { createModelGateway, ModelGatewayError, MODEL_EVENT } from './backends/model-gateway.js';
+import { createCanaryGuard } from './security/canary-guard.js';
 import {
   securityHeaders, isOriginAllowed, createRateLimiter, createBudgetBreaker,
 } from './middleware/security.js';
 import {
   newRequestId, statusEvent, tokenEvent, sourceEvent, errorEvent, doneEvent,
 } from './events.js';
+// WHY node built-ins here: the contact-reveal endpoint reads content/profile.json. It is build-time
+// content a deploy can change, so it is read per request rather than cached at boot.
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/** services/gateway/src -> repo root, so content/profile.json resolves from the package. */
+const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 /** Fields that must never be accepted on a request to OUR API (the brief's BYOK rules). */
 export const FORBIDDEN_FIELDS = [
@@ -100,7 +109,16 @@ export function createApp({ env = process.env, store: injectedStore } = {}) {
   // their rate limit, which is the cheapest possible bypass.
   app.set('trust proxy', false);
 
-  app.use(express.json({ limit: config.requestMaxBytes }));
+  // WHY the JSON parser is NOT mounted here: it must run AFTER the CORS middleware in mountRoutes().
+  //
+  // Mounting it in createApp() meant the body was parsed before the Origin was ever checked, so a
+  // malformed body from a DISALLOWED origin produced a parser error instead of 403 -- an access
+  // control decision that never happened, plus a needless parser error for a caller who was never
+  // going to be allowed anyway. That also let a blocked origin make the server parse a large body
+  // before rejecting it.
+  //
+  // mountRoutes() therefore registers the parser itself, immediately after the CORS and request-id
+  // middleware. This function only builds context; it installs no request-handling middleware.
 
   return { app, config, gateway, rateLimiter, budget, store: asyncStore, _rawStore: storePromise };
 }
@@ -175,8 +193,8 @@ export function errorBody(code, messageSafe, requestId, extra = {}) {
  *   2. CORS             -- before body parsing, so a rejected origin costs nothing
  *   3. request id       -- so every downstream log line can be correlated
  */
-export function mountRoutes(ctx) {
-  const { app, config, gateway, budget } = ctx;
+export function mountRoutes(ctx, { prepareTurn } = {}) {
+  const { app, config, gateway, budget, rateLimiter } = ctx;
 
   app.use((req, res, next) => {
     for (const [k, v] of Object.entries(securityHeaders(config))) res.setHeader(k, v);
@@ -203,6 +221,11 @@ export function mountRoutes(ctx) {
     res.setHeader('X-Request-Id', req.headers['x-request-id'] || newRequestId());
     next();
   });
+
+  // WHY the parser goes HERE and not in createApp(): the Origin check above must be able to refuse a
+  // request BEFORE its body is read. Mounting it earlier meant a malformed body from a blocked origin
+  // returned a parser error instead of 403, so the access-control decision never happened.
+  app.use(express.json({ limit: config.requestMaxBytes }));
 
   app.get('/healthz', async (_req, res) => {
     res.json({
@@ -259,7 +282,130 @@ export function mountRoutes(ctx) {
     });
   });
 
+  /**
+   * Contact details the generator deliberately omitted from the HTML.
+   *
+   * WHY this endpoint exists: `build_static_site.py` omits any contact field whose `render` is
+   * "reveal", so the phone number and email are absent from the prerendered page, from view-source
+   * and from the JS bundle. They have to come from somewhere at the moment the visitor asks, and this
+   * is that place -- which is why the browser hook fetches rather than importing a constant.
+   *
+   * WHY it reuses the rate limiter: this is a scrapable endpoint, and un-gated it would undo the very
+   * reason the values were withheld. A second limiter would be a second policy to keep in sync.
+   */
+  app.get('/v1/contact/reveal', async (req, res) => {
+    const requestId = String(newRequestId());
+    const limit = await rateLimiter(req, String(req.ip ?? 'anon'));
+    if (!limit.allowed) {
+      res.setHeader('Retry-After', String(limit.retryAfterSeconds));
+      return res.status(429).json(errorBody('rate_limited',
+        'Too many requests for contact details. Please wait a moment.', requestId,
+        { retryable: true, next_step: `Wait about ${limit.retryAfterSeconds} seconds, then try again.` }));
+    }
+
+    // WHY both conditions: a private field must never be served here regardless of how it renders,
+    // and a "link" field is already visible in the prerendered HTML, so sending it adds nothing.
+    const contact = readProfileContact();
+    const values = {};
+    for (const [key, field] of Object.entries(contact)) {
+      if (field && typeof field === 'object' && field.public === true && field.render === 'reveal'
+        && typeof field.value === 'string' && field.value !== '') {
+        values[key] = field.value;
+      }
+    }
+    return res.json({ values });
+  });
+
+/**
+ * POST /v1/prepare -- the browser path's server contribution: CONTEXT ONLY, NO MODEL CALL.
+ *
+ * WHY this exists: when a visitor brings their own key, the browser talks to the provider directly
+ * and the key never touches this server. But the RAG still has to run somewhere, and it runs here.
+ * The response is the assembled context, which is the one thing the visitor's own provider needs and
+ * this server is uniquely placed to produce.
+ *
+ * WHY the credential refusal runs first: this endpoint is the one place a visitor might plausibly
+ * paste their key "to help". The refusal must precede validation so the key is never echoed, logged
+ * or stored, even in an error path.
+ */
+app.post('/v1/prepare', async (req, res) => {
+  const requestId = String(newRequestId());
+
+  const forbidden = findForbiddenCredential(req.body ?? {}, req.headers);
+  if (forbidden) {
+    return res.status(400).json(errorBody('validation',
+      'Do not send a provider key to this server. Your key belongs in the model settings panel, '
+      + 'where it is used by your own browser and never reaches this site.',
+      requestId, { next_step: 'Open the model settings and paste the key there.' }));
+  }
+
+  const check = validateChatBody(req.body, { historyMaxMessages: config.historyMaxMessages });
+  if (!check.ok) return res.status(400).json(errorBody('validation', check.message, requestId));
+
+  const limit = await rateLimiter(req, String(req.body.session_id ?? req.ip ?? 'anon'));
+  if (!limit.allowed) {
+    res.setHeader('Retry-After', String(limit.retryAfterSeconds));
+    return res.status(429).json(errorBody('rate_limited',
+      'Too many requests. Please wait a moment before sending another message.', requestId,
+      { retryable: true, next_step: `Wait about ${limit.retryAfterSeconds} seconds, then try again.` }));
+  }
+
+  // WHY the same prepareTurn the site path uses: context assembly must be identical on both paths,
+  // or an answer would change purely because of who paid for the model call. `prepareTurn` is
+  // injected here (mountRoutes runs before mountChatRoutes) so both routes share one implementation.
+  if (typeof prepareTurn !== 'function') {
+    return res.status(503).json(errorBody('not_configured',
+      'Source search is unavailable right now, so answers may be incomplete.', requestId,
+      { retryable: true, next_step: 'Try again in a moment.' }));
+  }
+
+  try {
+    const prepared = await prepareTurn({
+      bot: check.value.bot,
+      message: check.value.message,
+      history: check.value.history ?? [],
+      requestId,
+    });
+    return res.json({
+      request_id: requestId,
+      bot: check.value.bot,
+      // WHY `sources` and not raw chunks: the browser renders a citation list. Returning internal
+      // chunk text would leak the retrieval scaffolding that the canary guard exists to hide.
+      sources: (prepared?.sources ?? []).map((s) => ({
+        id: s.id, kind: s.kind, title: s.title, locator: s.locator, score: s.score,
+      })),
+    });
+  } catch {
+    // WHY the same degradation as the site path: a broken index should leave the visitor with the
+    // static site, not a dead panel. Returning 503 with a reason lets the UI say so honestly.
+    return res.status(503).json(errorBody('retrieval_failure',
+      'Source search is unavailable right now, so answers may be incomplete.', requestId,
+      { retryable: true, next_step: 'Try again in a moment.' }));
+  }
+});
+
   return ctx;
+}
+
+/**
+ * Reads content/profile.json's contact block.
+ *
+ * WHY at request time rather than at boot: the file is build-time content a deploy can change without
+ * a gateway restart, and caching it would serve stale contact details after an edit.
+ *
+ * WHY it can fail quietly: the file is git-tracked, but a missing or malformed profile must not take
+ * the endpoint down with a stack trace. Returning an empty object gives the visitor the same outcome
+ * the prerendered page already gives them: no extra details, no broken page.
+ */
+function readProfileContact() {
+  try {
+    return JSON.parse(
+      readFileSync(join(ROOT_DIR, 'content', 'profile.json'), 'utf8'),
+    ).contact ?? {};
+  } catch (err) {
+    console.warn('[gateway] contact reveal: profile unreadable:', err.message);
+    return {};
+  }
 }
 
 /**
@@ -387,15 +533,17 @@ export function mountChatRoutes(ctx, { prepareTurn } = {}) {
 
       send(statusEvent(requestId, 'streaming'));
 
-      // WHY tokens are BUFFERED rather than forwarded immediately: the canary check can only run
-      // once the stream is complete. Forwarding tokens as they arrive meant a model that echoed its
-      // system prompt had already leaked it to the visitor before the check fired -- the check
-      // detected the leak but could not undo it. Buffering trades a small amount of first-token
-      // latency for the guarantee that a leaked prompt is never rendered.
+      // Incremental canary detection: tokens are forwarded as they arrive, EXCEPT for a tail of at
+      // most canary.length-1 characters held back while a partial match at the boundary is still
+      // possible. See services/gateway/src/security/canary-guard.js for the full argument.
       //
-      // The buffer is bounded: a model that ignores max_tokens cannot make this grow without limit.
-      let buffered = '';
-      const MAX_BUFFERED = 20000;
+      // WHY not buffer the whole response: the previous version did, and that destroyed first-token
+      // latency and progressive rendering. WHY not emit tokens blindly: a model that echoes its
+      // system prompt would have already leaked it to the visitor before any check could fire. This
+      // is the tightest bound that satisfies both.
+      const canary = prepared?._canary ?? null;
+      const guard = createCanaryGuard(canary);
+      let leakDetected = false;
       let overflowed = false;
 
       for await (const evt of gateway.adapter.stream({
@@ -404,43 +552,58 @@ export function mountChatRoutes(ctx, { prepareTurn } = {}) {
         signal: controller.signal,
       })) {
         if (controller.signal.aborted) break;
+
         if (evt.type === MODEL_EVENT.TOKEN) {
           if (ttftMs === 0) ttftMs = Date.now() - startedAt;
-          buffered += evt.text;
-          if (buffered.length > MAX_BUFFERED) {
-            // WHY stop accumulating rather than truncate silently: an over-long response is itself a
-            // signal, and continuing would hide it.
+          const step = guard.push(evt.text);
+
+          // WHY order matters: report the leak BEFORE emitting anything from this chunk, so not one
+          // character of a canary reaches the visitor even for a single frame.
+          if (step.leak) {
+            leakDetected = true;
+            break;
+          }
+          if (step.overflow) {
             overflowed = true;
             break;
+          }
+          if (step.emit) {
+            text += step.emit;
+            send(tokenEvent(requestId, step.emit));
           }
         } else if (evt.type === MODEL_EVENT.USAGE) {
           usage = evt.usage ?? usage;
         }
       }
 
-      // --- canary check, BEFORE anything is sent to the visitor ------------------------------
-      // WHY this must precede the first token frame: the AI service plants a random token in the
-      // system prompt. If it appears in the output, the model echoed its instructions -- a prompt
-      // leak that is invisible unless asserted.
-      const canary = prepared?._canary;
+      // Flush the held-back tail. WHY this is skipped after a leak or an abort: in both cases the
+      // response is being discarded, and emitting the tail would be emitting the very text we just
+      // decided not to send.
+      if (!leakDetected && !overflowed && !controller.signal.aborted) {
+        const tail = guard.finish();
+        if (tail.leak) {
+          leakDetected = true;
+        } else if (tail.emit) {
+          text += tail.emit;
+          send(tokenEvent(requestId, tail.emit));
+        }
+      }
+
+      // --- outcomes that discard the response ---------------------------------------------
+      // WHY discard rather than redact: a partial redaction can still leak fragments, and a response
+      // that leaked its prompt is not trustworthy at all.
       if (overflowed) {
         send(errorEvent(requestId, 'internal',
           'The response was too long and was discarded.',
           { nextStep: 'Please ask a more specific question.', retryable: false }));
         return res.end();
       }
-      if (canary && buffered.includes(canary)) {
-        // WHY discard rather than redact: a partial redaction can still leak fragments, and a
-        // response that leaked its prompt is not trustworthy at all.
+      if (leakDetected) {
         send(errorEvent(requestId, 'internal',
           'The response was discarded because it failed a safety check.',
           { nextStep: 'Please ask again.', retryable: true }));
         return res.end();
       }
-
-      // --- safe to render --------------------------------------------------------------------
-      text = buffered;
-      send(tokenEvent(requestId, buffered));
 
       await budget.record(Math.max(1, usage.prompt + usage.completion));
       send(statusEvent(requestId, 'completed'));

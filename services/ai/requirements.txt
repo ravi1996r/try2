@@ -1,0 +1,33 @@
+# Python dependencies for the AI service (services/ai).
+#
+# WHY these pins: every version below is the version currently installed in .venv and exercised by
+# the passing test suite. They were captured with `pip list --format=freeze` rather than written from
+# memory, so a fresh clone installs exactly what was verified. AGENTS.md tells a new contributor to
+# run `pip install -r services/ai/requirements.txt`; before this file existed that command failed.
+
+# --- direct dependencies -------------------------------------------------------
+fastapi==0.142.2
+uvicorn==0.54.0
+pydantic==2.13.5
+python-dotenv==1.2.4
+PyYAML==6.0.3
+httpx==0.28.1
+
+# --- transitive, pinned so a fresh install is reproducible ---------------------
+# fastapi -> starlette, pydantic
+starlette==1.7.0
+pydantic_core==2.46.5
+annotated-types==0.8.0
+# uvicorn -> click, h11 ; starlette -> anyio
+click==8.5.0
+h11==0.16.0
+anyio==4.15.1
+idna==3.20
+typing_extensions==4.16.0
+# NOTE: sniffio is deliberately absent. It is not installed in .venv (verified with `pip show
+# sniffio`, which reports "not found"), and anyio 4.15 does not require it here. Pinning a version
+# that was never verified would make a fresh install resolve against something untested.
+
+# --- test-only -----------------------------------------------------------------
+pytest==9.1.1
+pytest-asyncio==1.4.0

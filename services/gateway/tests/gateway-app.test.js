@@ -262,4 +262,47 @@ describe('gateway: SSE streaming (E2E-09, E2E-12, E2E-22)', () => {
       expect(statesOf(events)).not.toContain('completed');
     } finally { await close(); }
   });
+
+  test('tokens are delivered incrementally, not as one buffered blob', async () => {
+    // WHY this test exists: the old implementation buffered the ENTIRE response and sent a single
+    // token frame at the end, which passed every other test while destroying first-token latency and
+    // progressive rendering. Asserting on frame COUNT is what catches that regression; asserting only
+    // on the joined text would not, because the text is identical either way.
+    const { base, close } = await boot({}, {
+      prepareTurn: async () => ({
+        messages: [{ role: 'user', content: 'tell me a long story' }],
+        sources: [], limits: { max_output_tokens: 800 }, _canary: null,
+      }),
+    });
+    try {
+      const { events } = await readSse(`${base}/v1/chat/stream`, {
+        bot: 'bot1', message: 'tell me a long story',
+      });
+      const tokenFrames = events.filter((e) => e.type === 'token');
+      expect(tokenFrames.length).toBeGreaterThan(1);
+    } finally { await close(); }
+  });
+
+  test('a normal response still reaches the visitor intact', async () => {
+    // WHY: incremental emission is only safe if the concatenated tokens are byte-identical to what
+    // the buffering version produced. This pins that the tail flush actually happens -- a guard that
+    // held back its carry and never flushed it would pass the leak tests and silently truncate every
+    // answer by canary.length-1 characters.
+    const { base, close } = await boot({}, {
+      prepareTurn: async () => ({
+        messages: [{ role: 'user', content: 'hello there friend' }],
+        sources: [], limits: { max_output_tokens: 800 }, _canary: 'CANARY-tail-check',
+      }),
+    });
+    try {
+      const { events } = await readSse(`${base}/v1/chat/stream`, {
+        bot: 'bot1', message: 'hello there friend',
+      });
+      const text = tokensOf(events);
+      expect(text.length).toBeGreaterThan(0);
+      // The echo must be whole: nothing dropped from the head or the tail.
+      expect(text).toContain('hello there friend');
+      expect(statesOf(events)).toContain('completed');
+    } finally { await close(); }
+  });
 });

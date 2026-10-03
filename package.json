@@ -15,6 +15,9 @@
   "scripts": {
     "verify:fast": "node scripts/run.mjs verify:fast",
     "verify": "node scripts/run.mjs verify",
+    "build:site": "node scripts/run.mjs build:site",
+    "validate:content": "node scripts/run.mjs validate:content",
+    "env:drift": "node scripts/run.mjs env:drift",
     "dev": "node scripts/run.mjs dev",
     "build": "node scripts/run.mjs build",
     "test:live": "node scripts/run.mjs test:live",
@@ -24,16 +27,18 @@
     "data:reset": "node scripts/run.mjs data:reset",
     "index:rebuild": "node scripts/run.mjs index:rebuild",
     "traceability": "node scripts/generate-traceability.mjs",
-    "secret-scan": "node scripts/secret-scan.mjs",
+    "secret-scan": "node scripts/run.mjs secret-scan",
     "lint": "node scripts/lint.mjs",
     "typecheck": "node scripts/typecheck.mjs",
     "test:unit": "node scripts/run.mjs test:unit",
+    "test:unit:py": "node scripts/run.mjs test:unit:py",
+    "test:integration": "node scripts/run.mjs test:integration",
     "test:e2e": "node scripts/run.mjs test:e2e"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.7"
   },
   "allowScripts": {
     "esbuild@0.25.12": true,

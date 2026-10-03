@@ -17,7 +17,11 @@ from fastapi.testclient import TestClient
 from app.config import Config, ConfigError, load_config
 from app.main import create_app, sign_token, verify_token
 
-REAL_SECRET = "a-real-test-secret-value-32-bytes-long"
+# WHY this literal is not a secret: it is a fixed HMAC fixture for testing the production guard and
+# token signing. It is English words, not a generated credential, and it exists only in this test
+# file. The marker documents that a human reviewed it rather than hiding it from the scanner by
+# excluding the whole directory, which would also hide a real key pasted into a test file.
+REAL_SECRET = "a-real-test-secret-value-32-bytes-long"  # secret-scan: allow (fake HMAC fixture)
 
 
 @pytest.fixture()

@@ -6,7 +6,7 @@
  */
 
 import { createApp, mountRoutes, mountChatRoutes } from './app.js';
-import { loadConfig, startupBanner } from './config.js';
+import { loadConfig, startupBanner, ConfigError } from './config.js';
 import { createHmac, createHash } from 'node:crypto';
 
 /**
@@ -71,10 +71,27 @@ function mintToken(secret, ttlSeconds) {
 
 export async function startServer(env = process.env) {
   const ctx = createApp({ env });
-  mountRoutes(ctx);
-  mountChatRoutes(ctx, { prepareTurn: createAiClient(ctx.config) });
+  // WHY one prepareTurn instance shared by both routes: /v1/prepare and /v1/chat/stream must assemble
+  // context identically, so they get the same client rather than two constructed separately.
+  const prepareTurn = createAiClient(ctx.config);
+  mountRoutes(ctx, { prepareTurn });
+  mountChatRoutes(ctx, { prepareTurn });
 
   const { app, config } = ctx;
+
+  // WHY refuse to listen: the guard computes violations, but until now they were only PRINTED. A
+  // production deployment configured to run on local engines or a fake provider would boot, print a
+  // warning nobody reads, and serve real traffic -- which is precisely the outcome the guard exists
+  // to prevent. Detecting a misconfiguration and then starting anyway is worse than not checking.
+  if (config.productionGuardViolations.length) {
+    throw new ConfigError(
+      'Refusing to start in production with local backends: '
+      + `${config.productionGuardViolations.join(', ')}. `
+      + 'Set PORTFOLIO_ALLOW_LOCAL_BACKENDS_IN_PRODUCTION=true only if this is a deliberate demo.',
+      config.productionGuardViolations,
+    );
+  }
+
   const server = app.listen(config.port, config.host, () => {
     console.log(`[gateway] listening on http://${config.host}:${config.port}`);
     console.log(`[gateway] site origin ${config.siteOrigin}`);
@@ -91,7 +108,12 @@ const invokedDirectly = process.argv[1] && process.argv[1].endsWith('server.js')
 if (invokedDirectly) {
   const config = loadConfig();
   console.log(startupBanner(config));
-  startServer();
+  startServer().catch((err) => {
+    // WHY exit non-zero with the reason: a supervisor must be able to tell the difference between
+    // "started" and "refused to start". Logging and exiting 0 would make a refusal look healthy.
+    console.error(`[gateway] startup refused: ${err.message}`);
+    process.exit(1);
+  });
 }
 
 export { createHmac, createHash };

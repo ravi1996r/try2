@@ -17,7 +17,18 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['{apps,services,packages,tests}/**/*.test.js'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/.venv/**'],
+    // WHY tests/integration is EXCLUDED here: it spawns three real processes and binds real ports,
+    // so falling into this glob made `npm run verify:fast` boot a server stack and run its files
+    // under a 20s timeout meant for unit tests. It has its own config and its own task.
+    // tests/e2e is listed for the same reason, though it is doubly excluded already: its files are
+    // `.spec.ts`, which this `*.test.js` include would never match.
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.venv/**',
+      'tests/integration/**',
+      'tests/e2e/**',
+    ],
     reporters: process.env.CI ? ['default', 'junit'] : ['default'],
     outputFile: { junit: 'reports/junit.xml' },
     testTimeout: 20000,

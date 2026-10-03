@@ -26,7 +26,10 @@ Python AI service (`:8080`), three chatbots, five themes. Local-first: it must r
 ## Commands (npm scripts; all work in PowerShell and bash)
 ```
 npm run verify:fast     # lint + typecheck + unit + contract tests      (< 2 min target)
-npm run verify          # full gate: secret scan, integration, security, E2E, a11y, build
+npm run verify          # full gate: build, unit, secret scan, CSP mutation,
+                        # env drift, CROSS-PROCESS integration, E2E + a11y
+npm run test:integration # gateway -> Python AI service -> fake provider, real processes
+npm run test:e2e         # Playwright + axe against dist/ behind the real CSP
 npm run dev             # start web + gateway + ai service (+ fake providers)
 npm run build           # production build of apps/web
 npm run test:live       # opt-in; needs ALLOW_LIVE_TESTS=1 and real keys
@@ -50,7 +53,7 @@ Ports: web `:5173`, gateway `:8082`, AI service `:8080`, fake providers `:8090` 
 
 ## Layout
 ```
-apps/web/            Vite + Three.js front end (vanilla TS, no framework)
+apps/web/            Vite + React (enhancement layer only) + Three.js scenes
 services/gateway/    Node BFF: rate limits, CORS, security headers, SSE fan-out, sessions
 services/ai/         Python: orchestration, RAG, ingestion, retrieval, tools
 packages/contracts/  JSON Schema shared by both services (single source of truth)
@@ -61,6 +64,8 @@ docs/                plan, architecture, ADRs, reports, traceability
 
 ## Conventions
 - One render-loop owner. One module per theme scene. Shared utilities only.
+- **The Python generator owns `dist/index.html`.** React mounts into `#root` and may never replace the
+  prerendered markup; Vite emits only `main.js`. See `docs/11-adr-0011-react-enhancement.md`.
 - Strategy pattern for every external concern: business logic depends on the interface, never on
   `if (env === ...)`. Selectors live in one factory.
 - Every important module carries a WHY / ALTERNATIVES / WHY NOT / TRADE-OFF comment. Keep them true.

@@ -29,6 +29,10 @@ blob-report/
 .playwright/
 coverage/
 
+# Serena (the MCP code-intelligence server) writes local project metadata into the tree.
+# It is tooling state, not source, and would otherwise show up as an untracked directory.
+.serena/
+
 docs/reports/*.png
 docs/reports/screenshots/
 
