@@ -337,6 +337,25 @@ function handleModels(res, format) {
 }
 
 /**
+ * Port offset for the current process.
+ *
+ * WHY this exists: `vitest run` executes several test FILES, and more than one of them starts the
+ * fake providers. Two workers binding 127.0.0.1:8090 at the same moment produces EADDRINUSE, which
+ * looks like a product bug and is not one. Deriving the offset from VITEST_WORKER_ID (Vitest sets a
+ * unique value per worker) makes each worker's ports distinct.
+ *
+ * WHY step 10: five contiguous ports per worker, so consecutive worker ids cannot overlap.
+ * WHY returning 0 when the variable is absent: normal single-process use keeps the documented
+ * ports 8090-8094, which is what .env.example and the README promise.
+ */
+function defaultOffset() {
+  const raw = process.env.VITEST_WORKER_ID;
+  if (!raw) return 0;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n * 10 : 0;
+}
+
+/**
  * Builds one fake server bound to a port and a wire format.
  *
  * @param {{port: number, format: 'openai'|'ollama'|'anthropic'|'gemini'|'search'}} opts
@@ -444,6 +463,14 @@ export function createFakeServer({ port, format }) {
  * would serve fabricated answers that look real. The refusal is a hard error, not a warning, and it
  * is asserted by a test.
  *
+ * WHY `portOffset`: several test files each start the full fake set. Two suites binding :8090 at the
+ * same time is a real EADDRINUSE, not a hypothetical one -- it was observed when
+ * tests/fake-providers.test.js and services/gateway/tests/model-gateway.test.js ran in the same
+ * `vitest run`. Each Vitest worker gets a distinct offset from VITEST_WORKER_ID, so suites never
+ * collide. In normal single-process use (npm run dev, or one suite) the offset is 0 and the ports
+ * are exactly the documented 8090-8094.
+ *
+ * @param {Record<string,string>} [env]
  * @returns {{servers: object, close: () => Promise<void>, ports: object}}
  */
 export function startAllFakeProviders(env = process.env) {
@@ -455,12 +482,16 @@ export function startAllFakeProviders(env = process.env) {
     );
   }
 
+  // WHY an explicit override still wins: a developer debugging a port conflict needs to pin ports.
+  const override = (name, fallback) => Number(env[name] ?? fallback);
+  const offset = Number(env.FAKE_PORT_OFFSET ?? defaultOffset());
+
   const ports = {
-    openai: Number(env.FAKE_PROVIDERS_PORT ?? 8090),
-    ollama: Number(env.FAKE_PROVIDERS_OLLAMA_PORT ?? 8091),
-    anthropic: Number(env.FAKE_PROVIDERS_ANTHROPIC_PORT ?? 8092),
-    gemini: Number(env.FAKE_PROVIDERS_GEMINI_PORT ?? 8093),
-    search: Number(env.FAKE_PROVIDERS_SEARCH_PORT ?? 8094),
+    openai: override('FAKE_PROVIDERS_PORT', 8090) + offset,
+    ollama: override('FAKE_PROVIDERS_OLLAMA_PORT', 8091) + offset,
+    anthropic: override('FAKE_PROVIDERS_ANTHROPIC_PORT', 8092) + offset,
+    gemini: override('FAKE_PROVIDERS_GEMINI_PORT', 8093) + offset,
+    search: override('FAKE_PROVIDERS_SEARCH_PORT', 8094) + offset,
   };
 
   const servers = {
