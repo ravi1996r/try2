@@ -4,7 +4,13 @@ import { loadConfig } from '../src/config.js';
 
 /** Starts a server and waits for it to actually be listening. */
 async function boot(env) {
-  const { server } = await startServer(env);
+  // WHY a store is injected here: this suite is about the PRODUCTION GUARD, not about Redis. But a
+  // fully cloud-backed config legitimately selects CACHE_BACKEND=redis, and the registry now honours
+  // that request instead of quietly downgrading it to memory. Rather than weaken the fixture by
+  // weakening the switch, the store is supplied explicitly -- the config still says redis, and the
+  // guard is exercised against exactly the configuration it will meet in production.
+  const { createMemoryKeyValueStore } = await import('../src/backends/keyvalue.js');
+  const { server } = await startServer(env, { store: createMemoryKeyValueStore() });
   if (!server.listening) {
     await new Promise((r) => server.once('listening', r));
   }
@@ -180,6 +186,12 @@ describe('production guard: startup must REFUSE, not merely warn', () => {
     // that concern is checked independently of the backend selectors.
     const env = cleanProdEnv({ PORTFOLIO_FAKE_PROVIDERS: 'true' });
     expect(loadConfig(env).productionGuardViolations).toEqual(['fake-providers']);
-    await expect(startServer(env)).rejects.toThrow(/fake-providers/);
+    // WHY a store is injected even though this test expects a refusal: createApp() constructs the
+    // store promise before the guard runs, and a fully cloud-backed config selects Redis, which has
+    // no client in CI. Without a store that promise rejects and, because the guard throws before
+    // anyone awaits it, Node reports an unhandled rejection and fails the whole file. The guard
+    // behaviour under test is unchanged.
+    const { createMemoryKeyValueStore } = await import('../src/backends/keyvalue.js');
+    await expect(startServer(env, { store: createMemoryKeyValueStore() })).rejects.toThrow(/fake-providers/);
   });
 });

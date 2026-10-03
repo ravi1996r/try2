@@ -69,8 +69,13 @@ function mintToken(secret, ttlSeconds) {
   return `${payload}.${sig}`;
 }
 
-export async function startServer(env = process.env) {
-  const ctx = createApp({ env });
+export async function startServer(env = process.env, inject = {}) {
+  // WHY `inject` is threaded through: a test that boots a fully cloud-backed config needs a real
+  // backing store for the selected backend, and there is no live Redis in CI. Before the backend
+  // registry, CACHE_BACKEND=redis was silently downgraded to memory, so such a test passed for the
+  // wrong reason. Injecting keeps the test honest: the config still says redis, and a store is
+  // supplied explicitly rather than hidden behind a fallback.
+  const ctx = createApp({ env, store: inject.store, redisClient: inject.redisClient });
   // WHY one prepareTurn instance shared by both routes: /v1/prepare and /v1/chat/stream must assemble
   // context identically, so they get the same client rather than two constructed separately.
   const prepareTurn = createAiClient(ctx.config);

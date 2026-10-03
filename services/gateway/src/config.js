@@ -256,6 +256,11 @@ export function loadConfig(env = process.env) {
 
     dbBackend: oneOf(raw, 'DB_BACKEND', ['sqlite', 'mongodb'], 'sqlite'),
     cacheBackend: oneOf(raw, 'CACHE_BACKEND', ['memory', 'disk', 'redis'], 'memory'),
+    // WHY these two are read here: REDIS_URL was validated as REQUIRED when CACHE_BACKEND=redis
+    // (see the need() guard) but never surfaced on the config object, so the registry could not see
+    // the URL it was required to connect with. Declaring a variable is not the same as using it.
+    redisUrl: str(raw, 'REDIS_URL', ''),
+    redisKeyPrefix: str(raw, 'REDIS_KEY_PREFIX', 'portfolio:local'),
     vectorBackend: oneOf(raw, 'VECTOR_BACKEND', ['local', 'azure_search'], 'local'),
     blobBackend: oneOf(raw, 'BLOB_BACKEND', ['local', 'azure_blob'], 'local'),
 

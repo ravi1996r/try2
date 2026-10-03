@@ -23,6 +23,7 @@ import { loadConfig } from './config.js';
 import {
   createMemoryKeyValueStore, createDiskKeyValueStore,
 } from './backends/keyvalue.js';
+import { resolveKeyValueStore } from './backends/registry.js';
 import { createModelGateway, ModelGatewayError, MODEL_EVENT } from './backends/model-gateway.js';
 import { createCanaryGuard } from './security/canary-guard.js';
 import {
@@ -74,16 +75,23 @@ export function findForbiddenCredential(body, headers = {}) {
  * WHY it returns deps alongside the app: a module-level singleton cannot be reconfigured per test
  * without leaking state between suites. Tests need a synthetic config and a handle on the store.
  */
-export function createApp({ env = process.env, store: injectedStore } = {}) {
+export function createApp({ env = process.env, store: injectedStore, redisClient } = {}) {
   const config = loadConfig(env);
+  // WHY a separate variable: /healthz must report the backend that is REALLY running. Until the
+  // store promise resolves this is `null`, and the health handler awaits it, so the reported value is
+  // always the resolved one rather than the configured one.
+  let actualCacheBackend = null;
 
   const storePromise = injectedStore
     ? Promise.resolve(injectedStore)
-    : (config.cacheBackend === 'disk'
-      // WHY disk only when configured: it writes to data/, which must never be served.
-      ? createDiskKeyValueStore({ dir: `${config.dataDir}/cache` })
-      // WHY memory is the default: no service and no filesystem means the zero-credential boot works.
-      : Promise.resolve(createMemoryKeyValueStore()));
+    // WHY the registry: the previous inline branch handled only 'disk' and silently used memory for
+    // everything else, so CACHE_BACKEND=redis reported "redis" on /healthz while running in memory.
+    // The registry either honours the request or throws with a remedy -- there is no silent branch.
+    : resolveKeyValueStore(config, { redisClient }).then(({ store, actual }) => {
+      // WHY recorded on config: /healthz must report what is ACTUALLY running, not what was asked for.
+      actualCacheBackend = actual;
+      return store;
+    });
 
   // WHY the thin adapter: the limiter and breaker are written against the async KeyValueStore
   // interface, so they work unchanged with memory, disk or Redis behind the promise.
@@ -228,13 +236,20 @@ export function mountRoutes(ctx, { prepareTurn } = {}) {
   app.use(express.json({ limit: config.requestMaxBytes }));
 
   app.get('/healthz', async (_req, res) => {
+    // WHY await the store promise: the resolved backend name is only known once the store exists, and
+    // reporting the *configured* value is exactly how this endpoint used to claim Redis while running
+    // the in-memory store.
+    await storePromise;
     res.json({
       ok: true,
       service: 'gateway',
       app_env: config.appEnv,
       // WHY labels only: an operator needs to know WHICH backends are live; nobody needs the values.
       backends: {
-        db: config.dbBackend, cache: config.cacheBackend, vector: config.vectorBackend,
+        db: config.dbBackend,
+        // WHY actualCacheBackend: this is the store that exists right now, not the requested one.
+        cache: actualCacheBackend ?? 'unknown',
+        vector: config.vectorBackend,
         blob: config.blobBackend, llm: config.llmProvider,
         embeddings: config.embeddingProvider, search: config.searchProvider,
       },
