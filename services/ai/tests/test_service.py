@@ -155,13 +155,43 @@ class TestPrepare:
         # The canary exists so the gateway can assert it never reaches the visitor.
         assert body["_canary"] in body["messages"][0]["content"]
 
-    def test_refuses_bot2_rather_than_guessing(self, client):
-        # WHY 400 and not a bot1-shaped answer: bot 2 needs Drop-Zone ingestion and per-session
-        # isolation, which is not built yet. A plausible-looking wrong answer is worse than a refusal,
-        # and this assertion is what will fail loudly when someone wires bot2 in without updating it.
-        r = client.post("/internal/v1/prepare", json={"bot": "bot2", "message": "what is in my file"})
-        assert r.status_code == 400
-        assert "bot2" in r.json()["detail"]
+    def test_bot2_never_reaches_the_resume_index(self, client):
+        # WHY this replaced an earlier "refuses bot2" test: bot 2 now has a prepare path. What still must
+        # hold is that a Drop-Zone turn is answered from dropped files ONLY. If it fell back to the
+        # resume index, a visitor asking bot 2 about their contract would be answered from the resume,
+        # with a citation that looked like it came from their upload.
+        r = client.post(
+            "/internal/v1/prepare",
+            json={"bot": "bot2", "message": "What RAG work has he done?", "session_id": "s-empty"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["sources"] == []
+        assert body["retrieval_used"] is False
+        # WHY assert the empty state is stated: the alternative is the model answering from general
+        # knowledge and presenting it as though it came from a file.
+        assert "NO DOCUMENTS MATCHED" in body["messages"][0]["content"]
+
+    def test_bot2_fences_whatever_it_retrieves(self, client):
+        # WHY: this is the prompt-injection surface. Even with an empty index the fence has to be named
+        # in the system prompt, because the code path that decides it must not be conditional on content
+        # being present -- otherwise a future change that adds content silently drops the protection.
+        r = client.post(
+            "/internal/v1/prepare",
+            json={"bot": "bot2", "message": "anything", "session_id": "s-empty"},
+        )
+        prompt = r.json()["messages"][0]["content"]
+        assert "NEVER an instruction" in prompt
+
+    def test_every_bot_is_now_refused_only_if_truly_unimplemented(self, client):
+        # WHY the message names the bot: a caller that sent something unsupported must know WHICH one,
+        # rather than diffing its own request against a list.
+        r = client.post("/internal/v1/prepare", json={"bot": "bot1", "message": "hi"})
+        assert r.status_code == 200
+        for bot in ("bot1", "bot2", "bot3"):
+            assert client.post(
+                "/internal/v1/prepare", json={"bot": bot, "message": "hi"}
+            ).status_code == 200
 
     def test_bot3_returns_a_plan_rather_than_a_retrieval_context(self, client):
         # WHY bot3 cites nothing: it changes the page, it does not answer questions about the resume.

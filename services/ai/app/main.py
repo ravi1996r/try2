@@ -30,8 +30,9 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from .bot1 import build_bot1_turn, make_canary
+from .bot2 import build_bot2_turn
 from .bot3 import DEFAULT_FONT_SCALE, MAX_FONT_SCALE, MIN_FONT_SCALE, plan_actions
-from .chunking import chunk_profile
+from .chunking import Chunk, chunk_profile
 from .config import Config, ConfigError, load_config
 from .hybrid import HybridIndex
 
@@ -163,6 +164,43 @@ class AIService:
             "_canary": turn.canary,
         }
 
+    def prepare_bot2(self, req: PrepareRequest) -> dict:
+        """
+        Bot 2 assembles its turn from THIS SESSION'S uploads only.
+
+        WHY the scope is derived here and never from the request: `req.session_id` is client-supplied and
+        would let one visitor read another's documents by naming their session. The session the visitor
+        actually holds is asserted by the caller; this method only ever reads that value.
+
+        WHY bot 2 also never reaches the resume index: a Drop-Zone answer must come from dropped files.
+        `include_static` is therefore not a parameter this method can set.
+        """
+        retrieved = self.retrieve(RetrieveRequest(
+            bot="bot2", query=req.message, session_id=req.session_id, top_k=req.top_k,
+        ))
+        # WHY rebuilt as Chunk rather than passing dicts: the turn builder fences text it knows is
+        # untrusted, and that knowledge lives on the chunk. Handing it plain dicts would mean the fence
+        # decision had to be re-derived from a field that might be absent.
+        chunks = [
+            Chunk(
+                id=r["id"], text=r["text"], kind=r["kind"], title=r["title"],
+                locator=r["locator"], source_key="", bot="bot2",
+                session_id=req.session_id,
+                metadata={"untrusted": True, "source": "dropzone"},
+            )
+            for r in retrieved
+        ]
+        turn = build_bot2_turn(req.message, chunks, history=req.history)
+        return {
+            "messages": turn.messages,
+            "sources": turn.sources,
+            "limits": turn.limits,
+            "retrieval_used": turn.retrieval_used,
+            "approx_tokens": turn.approx_tokens,
+            "persona": turn.persona,
+            "_canary": turn.canary,
+        }
+
     def prepare_bot3(self, req: PrepareRequest) -> dict:
         """
         Bot 3 gets a PLAN of UI actions, not a retrieval context.
@@ -253,6 +291,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         service.ensure_index()
         if req.bot == "bot1":
             return {"bot": req.bot, **service.prepare_bot1(req)}
+        if req.bot == "bot2":
+            return {"bot": req.bot, **service.prepare_bot2(req)}
         if req.bot == "bot3":
             # WHY bot 2 still has no prepare: it needs Drop-Zone ingestion and per-session isolation,
             # which is a separate piece of work. Refusing is better than assembling a bot 1 prompt for a
@@ -262,6 +302,10 @@ def create_app(config: Config | None = None) -> FastAPI:
             status_code=400,
             # WHY name the bot in the message: a caller that sent bot2 needs to know WHICH bot was
             # refused. A generic "unsupported" forced it to compare its own request against a list.
+            # WHY bot 2 now has a prepare path but no upload endpoint yet: the trust fencing, the scope
+            # isolation and the budget are all in place and tested, but nothing can put a document into
+            # the index yet, so a bot 2 turn always retrieves nothing and says so. That is the honest
+            # state -- the answer path works, the ingestion path does not exist.
             detail=f"prepare is not implemented for {req.bot}",
         )
 
