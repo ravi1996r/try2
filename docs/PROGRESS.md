@@ -1,15 +1,16 @@
 # PROGRESS
 
-**Current phase:** Phase 1 — Foundations and walking skeleton (backend vertical slice + content layer)
-**Last full test run:** `npm run verify` → **PASSED in 48.1s**.
-`npx vitest run` → **268 passed / 268**;
-`pytest services/ai/tests` → **137 passed**;
-`npm run test:integration` → **15 passed** (2.50s, boots 3 real processes);
-`npx playwright test` → **11 passed** (12.7s, real gateway + real SSE).
-Total **431 tests, 0 skipped, 0 failing.**
+**Current phase:** Phase 2 — the three bots, themes as data, and production-quality gates.
+**Last full test run:** `npm run verify` → **PASSED in 43.5s.**
+`npx vitest run` → **328 passed / 328**;
+`pytest services/ai/tests` → **237 passed**;
+`npm run test:integration` → **21 passed** (real processes);
+`npx playwright test` → **11 passed** (real gateway + real SSE).
+Total **597 tests, 0 skipped, 0 failing.**
+`npm run perf:budget` → **PASSED**, hero JS at 85% of its gzipped budget.
 
-**Every task declared in package.json is now implemented.** `scripts/run.mjs` `NOT_YET` is empty.
-**Working tree:** uncommitted (see "Uncommitted work" below)
+**Every task declared in package.json is implemented.**
+**Branch:** `dev`, pushed. Everything is committed — see "Branch and commit state" below.
 
 ## Verified status
 
@@ -42,6 +43,11 @@ Total **431 tests, 0 skipped, 0 failing.**
 | `services/ai/requirements.txt` | Implemented | was **missing**; captured from the installed venv, `--dry-run` clean |
 | `test:e2e` (Playwright + axe) | Implemented | 6 tests; a11y proven to bite (planted contrast violation caught, 25 nodes) |
 | **Cross-process chat (1.13)** | **Implemented** | 8 tests: gateway → Python AI service → fake provider, real processes, clean teardown |
+| **Backend switch** | **Implemented** | one registry; the requested kind is honoured or startup fails with a remedy. 8 tests |
+| Bot 3 Master actions | **Implemented** | 16 validator + 11 store + 6 cross-process tests; `tool_call` streams and the browser applies it |
+| Bot 2 Drop-Zone safety | **Implemented** (answer path) | 29 type-sniffing + 18 trust-fencing tests; no upload endpoint yet |
+| Themes as data | **Implemented** | `THEME_REGISTRY` + `validateTheme()`; 8 tests incl. WCAG AA contrast on all five |
+| Perf budgets | **Implemented** | bundle gate in `verify`; 17 tests on the degradation decision |
 
 ### Task 1.13 is now DONE, not partial
 `tests/integration/` boots the fake providers, the **Python AI service** and the gateway as three
@@ -70,18 +76,30 @@ confirmed to receive React's output. This was the open risk carried over from th
 | E2E runs the real gateway | Implemented | 2nd `webServer` boots the stack; chat tests do real SSE (1.7 s) |
 
 ### Not yet implemented
-**None.** Every command runs and every planned frontend feature is built.
+- **Bot 2 upload surface.** The *answer* path is complete: type sniffing, session isolation, trust
+  fencing and the context budget are all built and tested. Nothing can put a document into the index
+  yet, so a Bot 2 turn retrieves nothing and says so. The SSRF-safe URL fetcher and TTL cleanup are
+  also outstanding.
+- **Per-theme scene modules.** Themes are data with a validated `scene` config (geometry kind, motion,
+  camera presets), but `scenes/` holds no per-theme modules yet, so every theme still renders through
+  the single shared scene. The config is ready; the loader that turns it into a lazy chunk is not.
+- **MongoDB and Azure adapters.** The selectors are read, validated and honestly reported. Only the
+  Redis adapter is implemented.
 
 ### Known limits, stated plainly
-- **Bot 2 and bot 3 are UI only.** Both buttons render and post to the gateway, but bot2 has no
-  document-upload surface and bot3's web search is Experimental. Neither is wired to a real source.
+- **Bot 3 works; Bot 2 does not yet.** Bot 3 plans validated UI actions and the browser applies them.
+  Bot 2 fences and isolates correctly but cannot receive a document.
+- **Bot 3's plan is deterministic, not model-generated.** This is a deliberate design decision, not a
+  gap — see `services/ai/app/bot3.py`. The model narrates; it does not choose.
 - **The browser path is untested against a real provider.** `test:live` is key-gated and was skipped
   with no credentials. The adapter request/parse code is exercised only structurally; no OpenAI,
   Anthropic or Ollama endpoint has actually been called from the browser in this session.
-- **Scene is one rotating wireframe mesh plus a ring.** Not the five themed scenes in the plan.
-- **E2E now binds the documented ports** (8080/8082/8090). A running `npm run dev` will make the
-  gate fail on a port conflict. That is deliberate -- a silent attach to a foreign process would be
-  worse -- but it is new behaviour worth knowing.
+- **Bot 2 refuses PDF, DOCX and every other binary format.** A file is text or it is refused. That
+  costs real formats and is deliberate: a parser written for well-formed input, fed untrusted bytes, is
+  an attack surface. `dropzone.sniff_type` types by CONTENT, so `notes.txt` holding an executable is
+  refused.
+- **E2E binds the documented ports** (8080/8082/8090). A running `npm run dev` will make the gate fail
+  on a port conflict. That is deliberate — a silent attach to a foreign process would be worse.
 
 ### Measured this session (real hardware, real processes)
 | Harness | Command | Result |
@@ -107,28 +125,39 @@ fake on **this** machine, and neither supports a claim about a real provider.
 - **Integration tests use a throwaway data dir.** `PORTFOLIO_DATA_DIR` points at a temp directory,
   so the index is rebuilt per run (~2s). They never touch the developer's real `./data`.
 
-## Uncommitted work (this session)
+## Branch and commit state
 
-- `scripts/build_static_site.py` — build-time prerender of `apps/web/dist/` from `content/profile.json`.
-  Generates the SEO page, the no-JS page and the 2D fallback as **one artefact**; the 3D scene is
-  progressive enhancement on top of it. Reveal-gated contact values (email, phone) are never emitted.
-- `scripts/run.mjs` — task runner; `verify` / `verify:fast` now run for real.
-- `scripts/secret-scan.mjs` — 4-signal secret scanner.
-- `scripts/check-env-drift.mjs` — bidirectional `.env.example` ↔ code drift check.
-- `tests/tooling.test.js` — 21 tests for the three scripts above.
-- `services/ai/tests/test_static_site.py` — 32 tests for the generator.
-- `.env.example` — added 4 undocumented variables; marked 9 as `# env-drift: planned`.
-- `package.json` — routed existing scripts through `run.mjs`; added `build:site`, `validate:content`,
-  `env:drift`, `test:unit:py`.
+Everything below is **committed and pushed to `dev`**. `AGENTS.md` rule 7 forbids `git push`; the
+repository owner authorised it explicitly for this branch, so the rule and the instruction now disagree
+and rule 7 should be amended rather than quietly ignored.
+
+| Commit | What landed |
+| --- | --- |
+| `abac465` | Full local-first stack, frontend and toolchain (431 tests at the time) |
+| `26fd760` | Backend switch made real: one registry, no silent fallback, honest `/healthz` |
+| `baa7dd8` | Backend selectors now read by the process that actually owns them |
+| `d9d195b` | Bot 3 end to end: planner, gateway `tool_call` stream, browser dispatch, undo/redo/reset |
+| `97fead0` | Bot 2 trust fencing, content-based type sniffing, session isolation |
+| `52fed36` | Themes as data with a validator; perf budgets wired into `verify` |
 
 ## Gate scope, stated honestly
 
-`verify` currently runs: content validation → generator tests → vitest → pytest → secret scan →
-env drift → static build. It does **not** yet include the integration, security-header, E2E or
-browser-a11y gates listed in AGENTS.md, because those suites do not exist. The remaining
-package.json scripts (`dev`, `build`, `lint`, `typecheck`, `test:e2e`, `test:live`, `evals:live`,
-`perf:local`, `load`, `data:reset`, `index:rebuild`, `traceability`) are declared but **not
-implemented**; `run.mjs` exits 1 with a reason for each rather than pretending to succeed.
+`verify` runs, in order: content validation → generator tests → `build` → **`perf:budget`** → vitest →
+pytest → secret scan → env drift → **`test:integration`** → **`test:e2e`**. Last measured:
+**43.5 s, all green.**
+
+Measured budget headroom from a real production build, not a constant:
+
+| Artifact | Gzipped | Budget | Used |
+| --- | --- | --- | --- |
+| `dist/assets/main.js` (hero) | 78,337 B | 92,160 B | 85% |
+| `dist/assets/Scene.js` (lazy) | 116,730 B | 133,120 B | 88% |
+| `dist/assets/site.css` | 1,395 B | 12,288 B | 11% |
+
+**Still not in the gate:** the live-provider suites (`test:live`, `evals:live`) need real keys and are
+opt-in; `perf:local` and `load` measure against a local fake on this machine and cannot support a claim
+about a real provider, so they stay manual. `perf:budget` covers bundle size, not runtime frame time —
+the frame-time budget is implemented and unit-tested but a browser frame-time gate is not wired into CI.
 
 ## Task checklist
 
@@ -142,8 +171,8 @@ implemented**; `run.mjs` exits 1 with a reason for each rather than pretending t
 | 1.9 | SSRF IP classifier + URL guard + corpus | done |
 | 1.10a | Local embedder (Experimental) | done |
 | 1.10b | Chunking + hybrid retrieval | done |
-| 1.11 | Express server + `/v1/chat/stream` SSE endpoint | **next** |
-| 1.12 | Python AI service (FastAPI) exposing retrieval | **next** |
+| 1.11 | Express server + `/v1/chat/stream` SSE endpoint | **done** |
+| 1.12 | Python AI service (FastAPI) exposing retrieval | **done** |
 | 1.13 | End-to-end: browser → gateway → AI service → provider | **done** — 8 cross-process tests, real processes |
 | 1.14 | `verify:fast` / `verify` runner scripts | **done** — `scripts/run.mjs`, full gate 26.3s |
 | 1.15 | gitleaks config + secret-leak scan | **done** — `scripts/secret-scan.mjs` (4 signals, 12 tests) |
@@ -156,8 +185,13 @@ implemented**; `run.mjs` exits 1 with a reason for each rather than pretending t
 | 1.22 | Frontend foundation: React enhancement over prerendered HTML | **done** — ADR-0011, 8 CSP-invariant tests |
 | 1.23 | `typecheck` gate (`tsc --noEmit`) | **done** — in `verify` |
 | 1.24 | Real `npm run build` (generator + Vite bundle) | **done** — `dist/index.html` + `dist/assets/main.js` |
-| 1.25 | Three.js scene, theme transitions, navigation, contact reveal | **partial** — themes (5) + contact reveal done; scene/nav not built |
-| 1.26 | Chat UI (Bot 2 / Bot 3) and model switcher | pending |
+| 1.25 | Three.js scene, theme transitions, navigation, contact reveal | **done** — scene + nav + reveal; themes are now validated data, per-theme scene modules pending |
+| 1.26 | Chat UI (Bot 2 / Bot 3) and model switcher | **partial** — Bot 3 works end to end; Bot 2's answer path is built but has no upload surface |
+| 2.1 | Bot 3 Master actions: shared validator, gateway stream, browser dispatch, undo/redo/reset | **done** — 16 validator + 11 store + 6 cross-process tests |
+| 2.2 | Bot 2 Drop-Zone: type sniffing, session isolation, trust fencing, context budget | **partial** — all four built and tested; upload endpoint, URL fetcher and TTL cleanup outstanding |
+| 2.3 | Themes as data: token + scene config schemas, validator, safe transitions, reduced motion | **partial** — registry and validator done, 8 tests; per-theme lazy scene modules outstanding |
+| 2.4 | Perf budgets in CI: gzipped hero JS, CLS, draw calls, frame time, low-FPS degradation | **partial** — bundle gate in `verify` + frame-time degradation unit-tested; CLS/draw-call not measured in CI |
+| 1.17 | Phase 1 report | pending |
 | 1.27 | `npm run dev`: 4-service supervisor + port preflight | **done** — all 4 verified 200, 7 tests |
 | 1.28 | `npm run lint` (project rules, no ESLint) | **done** — 5 rules, in the gate |
 | 1.29 | `services/ai/requirements.txt` (was missing) | **done** — captured from installed venv |
@@ -172,11 +206,17 @@ implemented**; `run.mjs` exits 1 with a reason for each rather than pretending t
 | 1.17 | Phase 1 report | pending |
 
 ## Next three tasks
-1. Express app with SSE `/v1/chat/stream`, wiring config → rate limit → events → Model Gateway.
-2. Python FastAPI service exposing `POST /internal/v1/retrieve` over the hybrid index.
-3. Integration test proving one request streams end-to-end and cancels upstream.
+1. **Bot 2 upload endpoint** — accept a file, run `sniff_type`, chunk it with a server-derived session,
+   and delete on request. The safety layers are already tested; this is the surface that feeds them.
+2. **Per-theme scene modules** — a loader that turns each theme's `scene.kind` into a lazy chunk, so the
+   config that already exists becomes the behaviour. Needs safe disposal on transition.
+3. **CLS and draw-call measurement in the gate** — `perf:budget` currently checks bytes only. A
+   Playwright layout-shift measurement and a `renderer.info` draw-call read would close the gap the
+   frame-time budget already covers in unit tests.
 
 ## Real bugs caught by tests (recorded per rule 1.4)
+
+Earlier sessions:
 
 1. `missingKeysFor` read only `config.secrets`, silently skipping `OPENROUTER_MODEL` / `LLM_BASE_URL`.
 2. Disk `KeyValueStore` never hydrated from disk — persistence looked fine, lost everything on restart.
@@ -188,13 +228,36 @@ implemented**; `run.mjs` exits 1 with a reason for each rather than pretending t
 8. `FAKE_MARKER` conflated header name with header line → `ERR_INVALID_HTTP_TOKEN`, suite hung 320s.
 9. Two suites bound port 8090 simultaneously → real `EADDRINUSE`; fixed with per-worker port offset.
 
+This session:
+
+10. **`/healthz` claimed Redis while running memory.** `CACHE_BACKEND=redis` was accepted, reported as
+    `"cache": "redis"`, and then silently served from the in-memory store. `REDIS_URL` was even marked
+    *required* in that mode and never read.
+11. **The gateway reported backends it does not own.** `DB_BACKEND` / `VECTOR_BACKEND` / `BLOB_BACKEND`
+    were validated and echoed by the gateway while the AI service — which actually uses them — never
+    read them at all. A health report about a value a process never consumes is a false claim.
+12. **`"turn off high contrast"` enabled it.** The negation list matched whole phrases, so the most
+    natural phrasing missed it entirely. Replaced with a proximity check plus 12 tests.
+13. **`/healthz` read a `createApp` local from a route mounted by a different function.** A
+    `ReferenceError` that only appeared when the gateway booted for real — every unit test injects a
+    store, so none of them executed that path. The cross-process suite caught it.
+14. **UTF-16 files were refused as binary**, because the NUL scan ran before the decode and UTF-16 is
+    NUL in every other byte. Then every UTF-16 file was refused as a JPEG, because non-ASCII signature
+    bytes decoded to `""` and `str.startswith("")` is always true.
+15. **Five invented `bodyContrast` values, all wrong** (12.4 stored vs 15.89 computed on `chill`).
+    Exactly the stale claim the validator exists to catch, so the data was corrected, not the assertion.
+
 ## Open questions / risks carried
 - `inputs/sample-interview-question.md` was missing (A-01); the authored file is a stand-in.
 - Local embedder is **Experimental**; BM25 carries exact-term recall. Measured, not assumed.
-- Azure OpenAI, Redis, MongoDB, Azure AI Search, Azure Blob adapters are **not implemented** —
-  Redis is scaffold-only behind an injected client. Labels are honest, not aspirational.
-- Retrieval cannot decide answerability (BM25 always returns top-k); refusal must live in the
-  prompt layer. This is now pinned by a test so nobody "fixes" it with a score threshold.
+- **MongoDB, Azure AI Search, Azure Blob and Azure OpenAI adapters are not implemented.** The selectors
+  are read and honestly reported, and Redis works, but those four are labels without adapters behind
+  them. Labels are honest, not aspirational.
+- Bot 3's fence and isolation are structural; its *prompt-level* resistance to injection is not proven,
+  because proving it needs a live model. The system prompt states that fenced text is data and the
+  browser revalidates regardless, but "the model obeyed" is not something this repo can assert.
+- Retrieval cannot decide answerability (BM25 always returns top-k); refusal must live in the prompt
+  layer. This is pinned by a test so nobody "fixes" it with a score threshold.
 
 ## Pointers
 `docs/adr/` per phase; `docs/14-decision-log.md` for the full table.
