@@ -81,6 +81,14 @@ const TASKS = {
     group: ['build:site', 'build:web'],
   },
 
+  'perf:budget': {
+    desc: 'Fail if the hero JS, lazy scene chunk or CSS exceed their gzipped budget',
+    // WHY this is a separate task and not folded into build: a budget breach is a DIFFERENT failure from
+    // a broken build, and a developer needs to be told which. It also reads files the build just wrote,
+    // so it must be able to run on demand against a build that already exists.
+    cmd: [process.execPath, [join(ROOT, 'scripts/perf-budget.mjs')]],
+  },
+
   'test:unit:web': {
     desc: 'Static-site generator tests: escaping, a11y structure, reveal-field omission',
     cmd: [pythonBin(), ['-m', 'pytest', 'services/ai/tests/test_static_site.py', '-q']],
@@ -205,7 +213,10 @@ const TASKS = {
     // them, and `test:e2e` serves the built artifact with the gateway's real CSP. What is still NOT
     // covered: the live-provider suites (they need real keys), perf/load harnesses, and the Three.js
     // scenes, which do not exist yet. docs/PROGRESS.md records the remainder.
-    group: ['build', 'verify:fast', 'test:integration', 'test:e2e'],
+    // WHY `perf:budget` sits directly after `build`: it reads dist/assets, so it must see the artifacts
+    // this run just produced. Placing it here means a bundle that grows past its budget fails the gate
+    // on the same commit that grew it, rather than being discovered later.
+    group: ['build', 'perf:budget', 'verify:fast', 'test:integration', 'test:e2e'],
   },
 };
 

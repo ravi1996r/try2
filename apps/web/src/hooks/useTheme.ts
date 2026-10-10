@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useCallback, useState } from 'react';
+import {
+  DEFAULT_THEME, THEME_IDS, THEME_REGISTRY, type ThemeDefinition, type ThemeId,
+} from '../scene/themes';
 
 /**
  * Theme selection.
@@ -8,25 +11,18 @@ import { useCallback, useEffect, useState } from 'react';
  * different set (`default`/`midnight`/`paper`/...), which created two competing lists that would
  * drift the first time a theme was added. One source of truth: the gateway.
  *
- * WHY this hook does not fetch that list at runtime: it is a compile-time union, so a theme id that
- * the gateway does not know is a type error rather than a silently unstyled page. The runtime list
- * still arrives from /v1/config for anything that needs to display it.
+ * WHY the ids are re-exported from scene/themes.ts rather than declared here: the theme DATA (palette,
+ * scene config, motion posture) lives in one module now, and a theme id is meaningless without it. Two
+ * lists of ids is the drift bug this comment already warns about, one file over.
  */
-export const THEMES = [
-  { id: 'chill', label: 'Chill' },
-  { id: 'cyberpunk', label: 'Cyberpunk' },
-  { id: 'fantasy', label: 'Fantasy' },
-  { id: 'retro', label: 'Retro' },
-  { id: 'modern', label: 'Modern' },
-] as const;
+export const THEMES = THEME_IDS.map((id) => ({ id, label: THEME_REGISTRY[id].label }));
 
-export type ThemeId = (typeof THEMES)[number]['id'];
+export type { ThemeId, ThemeDefinition };
 
 const STORAGE_KEY = 'portfolio:theme';
-const DEFAULT_THEME: ThemeId = 'chill';
 
 function isThemeId(value: unknown): value is ThemeId {
-  return THEMES.some((t) => t.id === value);
+  return THEME_IDS.some((t) => t === value);
 }
 
 function readStored(): ThemeId {

@@ -16,12 +16,20 @@ const read = (...p) => readFileSync(join(ROOT, ...p), 'utf8');
  * simply offered themes that had no CSS behind them. This test makes that drift impossible.
  */
 describe('theme single source of truth', () => {
-  /** Pulls `THEMES` ids out of the hook source. */
+  /**
+   * Pulls the theme ids out of the single source of truth.
+   *
+   * WHY this reads scene/themes.ts rather than hooks/useTheme.ts: themes became DATA, so `THEMES` in
+   * the hook is now derived (`THEME_IDS.map(...)`) and holds no literal ids to scrape. THEME_IDS in
+   * scene/themes.ts is the declaration, and scraping it keeps this a source-level contract test for the
+   * same reason the original did -- importing a `.ts` module here would widen the unit glob to cover
+   * React and TSX, dragging the Playwright specs in with it.
+   */
   function hookThemeIds() {
-    const src = read('apps', 'web', 'src', 'hooks', 'useTheme.ts');
-    const block = /export const THEMES = \[([\s\S]*?)\] as const;/.exec(src);
-    expect(block, 'could not find the THEMES array in useTheme.ts').not.toBeNull();
-    return [...block[1].matchAll(/id:\s*'([^']+)'/g)].map((m) => m[1]);
+    const src = read('apps', 'web', 'src', 'scene', 'themes.ts');
+    const block = /export const THEME_IDS = \[([\s\S]*?)\] as const;/.exec(src);
+    expect(block, 'could not find THEME_IDS in scene/themes.ts').not.toBeNull();
+    return [...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
   }
 
   function gatewayThemeIds() {
@@ -54,7 +62,7 @@ describe('theme single source of truth', () => {
 
   it('the hook default theme is the first entry and has a CSS block', () => {
     const css = read('apps', 'web', 'src', 'index.css');
-    const src = read('apps', 'web', 'src', 'hooks', 'useTheme.ts');
+    const src = read('apps', 'web', 'src', 'scene', 'themes.ts');
     const first = hookThemeIds()[0];
     const declaredDefault = /DEFAULT_THEME:\s*ThemeId\s*=\s*'([^']+)'/.exec(src);
     expect(declaredDefault, 'DEFAULT_THEME is not declared').not.toBeNull();

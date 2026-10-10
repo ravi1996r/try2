@@ -23,6 +23,7 @@
     "test:live": "node scripts/run.mjs test:live",
     "evals:live": "node scripts/run.mjs evals:live",
     "perf:local": "node scripts/run.mjs perf:local",
+  "perf:budget": "node scripts/perf-budget.mjs",
     "load": "node scripts/run.mjs load",
     "data:reset": "node scripts/run.mjs data:reset",
     "index:rebuild": "node scripts/run.mjs index:rebuild",
